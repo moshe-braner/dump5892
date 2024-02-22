@@ -24,6 +24,8 @@ The "app" running on the ESP32 has various settings and modes.  Type "?" into th
 
 Due to the focus on preparing software for situational awareness in a portable device carried in an aircraft, only the "relative" mode of position decoding is included.  One must enter a reference location in order to decode the locations of aircraft from which messages are received.  This location does not have to be precise, it can be within tens of miles of the traffic.  But if it is correct for a specific point, whether the receiver location or a nearby airport, dump5892 can report the traffic locations as distance and bearing from the reference location, instead of lat/lon coordinates.
 
+The source code is set up to compile for ESP32 under the Arduino IDE.
+
 ## Status
 
 The dump5892 version here is an Alpha test.  It has not even been tested with a GNS5892 module yet!  It has been tested with some sample ADS-B messages from the terminal.
