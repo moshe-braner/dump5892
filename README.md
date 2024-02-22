@@ -2,6 +2,8 @@
 
 Software for DIY 1090ES ADS-B receiver based on the GNS 5892 module
 
+Last updated February 22, 2024
+
 ## Background
 
 DIY receivers for 1090ES ADS-B messages have settled on SDR methods.  The receiver is broadband and the software looks for certain types of signals within the huge amount of raw data from the SDR module.  This processing of the data requires significant processing power.  So much so that the typical hardware (Raspberry Pi) needs a fan for cooling.  This is not a good approach for portable devices that need to run on a battery for many hours.
@@ -18,7 +20,7 @@ The data processing has been wrapped in additional software that turns it into a
 
 The target hardware is the GNS5892 module and a generic ESP32 board.  They should be connected with short wires, as the output baud rate of the GNS5892 is 921600 baud.  The 3.3V power output from a typical ESP32 board should be able to supply the GNS5892 the 40 mA it requires.
 
-The USB jack of the ESP32 board should then be connected to a computer on which a USB terminal program is running.  It serves as both the user interface for commands and operational info, as well as the data collection tool, by letting it run for a while and then saving the text in the terminal program.  Other software could theoretically be written to handle the computer side of things in friendlier ways.
+The USB jack of the ESP32 board should then be connected to a computer on which a USB terminal program is running at 115200 baud.  It serves as both the user interface for commands and operational info, as well as the data collection tool, by letting it run for a while and then saving the text in the terminal program.  Other software could theoretically be written to handle the computer side of things in friendlier ways.
 
 The "app" running on the ESP32 has various settings and modes.  Type "?" into the terminal to see the list of commands.  ADS-B messages in the format output by the GNS5892 can also be entered into the terminal and will be processed in the same way as messages coming from the GNS5892.  This is useful for debugging.
 
@@ -40,11 +42,11 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 <br>
 <br>
 
-[Source code] (https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
+[Source code](https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
 <br>
 <br>
 
-[Compiled binaries for ESP32] (https://github.com/moshe-braner/dump5892/tree/master/binaries)
+[Compiled binaries for ESP32](https://github.com/moshe-braner/dump5892/tree/master/binaries)
 <br>
 <br>
 
