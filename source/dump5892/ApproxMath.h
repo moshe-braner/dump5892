@@ -26,7 +26,8 @@ float approxHypotenuse(float, float);
 float CosLat(float);
 float InvCosLat(void);
 
-int32_t iatan2_approx(int32_t ns, int32_t ew);
-uint32_t iapproxHypotenuse(uint32_t dx, uint32_t dy);
+int32_t iatan2_approx( int32_t ns, int32_t ew );
+uint32_t iapproxHypotenuse0( int32_t x, int32_t y );
+uint32_t iapproxHypotenuse1( int32_t x, int32_t y );
 
 #endif /* APPROXMATH_H */

@@ -1,0 +1,148 @@
+THE GIST OF THE CPR LOCATION DECODING
+
+int decodeCPRrelative()
+{
+    // convert incoming cprlxx values to the "fractions" (how far into current zone)        FLOP COUNT
+    float fractional_lat = mm.cprlat * 7.629394531e-6;  // = 1/131072 = 2^-17                   A
+    float fractional_lon = mm.cprlon * 7.629394531e-6;                                          A
+
+    // Compute the Latitude Index "j", using the odd/even fflag of the incoming message
+    j = flrlat[mm.fflag] + floor(0.5 + modlat[mm.fflag] - fractional_lat);                      3A
+    // latitude is zone border + the fractional part
+    rlat = dLat[mm.fflag] * (j + fractional_lat);                                               A,M
+    if (rlat >= 270) rlat -= 360;                   //>>> is this necessary?                    (A)
+
+    // Check to see that answer is reasonable - i.e. no more than 1/2 zone away
+    float degsdiff = fabs(rlat - reflat);                                                        A
+    if (degsdiff > dLatHalf) {
+      if (degsdiff > 0.5 * dLat[mm.fflag]) {   // more precise test                             (M)
+...        return (-1);                        // Time to give up - Latitude error
+      }
+    }
+
+    // Check whether the pre-computed NL is correct - likely, if target is close.
+    float absrlat = fabs(rlat);         // the coding of rlon depends on rlat!
+    bool gt0 = (absrlat >= NLtable[NL[mm.fflag]]);
+    bool lt1 = (absrlat < NLtable[NL[mm.fflag]+1]);
+    int effort = 0;
+    if (gt0 || lt1) {
+        // NL is incorrect for the target, need to recompute dLon etc.
+        // First check whether the correct NL is the current one +-1,
+        // For these adjacent NLs we've also pre-computed things.
+...
+        if (lt1 && absrlat >= NLtable[NL[mm.fflag]+2]) {
+            //NL2 = NL[mm.fflag] + 1;
+...
+        } else if (gt0 && absrlat < NLtable[NL[mm.fflag]-1]) {
+            //NL2 = NL[mm.fflag] - 1;
+...
+        } else {
+            // Shift into non-adjacent zone.
+            // This won't happen if range is < about 80 miles at our latitude
+            // No choice but to do the full NL search and recompute.
+            int NL2 = cprNLFunction_(absrlat, 1, 59);                        (bisection search, FP comparisons)
+            dLon2 = cprDlonFunction(mm.fflag, NL2);                                     (table lookup)
+            scaled = reflon * cprDlonInvFunction(mm.fflag, NL2);                               (M)
+            flrlon2 = floor(scaled);
+            modlon2 = scaled - flrlon2;                                                        (A)
+        }
+    } else {
+         // pre-computed NL is OK, everything we need is pre-computed
+...
+    }
+
+    // Compute the Longitude Index "m"
+    m = flrlon2 + floor(0.5 + modlon2 - fractional_lon);                                       3A
+    // longitude is zone border + the fractional part (whew!)
+    rlon = dLon2 * (m + fractional_lon);                                                       A,M
+    if (rlon > 180) rlon -= 360;                                                               (A)
+
+    // Check to see that answer is reasonable - i.e. no more than 1/2 zone away
+    degsdiff = fabs(rlon - reflon);                                                             A
+    if (degsdiff > dLonHalf) {
+      if (degsdiff > 0.5 * dLon2) {    // more precise test                                    (M)
+...        return (-1);                        // Time to give up - Longitude error
+      }
+    }
+}
+                                                                                 TOTAL: 14 FLOPS, usually
+                                                                                        (no divisions!)
+             RESULT: LAT/LON
+                     - need more math to compute distance and bearing
+
+
+
+
+THE GIST OF THE CPR PRE-PROCESSING (all integer math)
+
+static bool parse_position(bool justparse, char s)                                            IOPS
+{
+    int32_t m = (int32_t) mm.cprlat;
+    int32_t r = (int32_t) ourcprlat[mm.fflag];   // convert from unsigned to signed...
+    if (m-r > (1<<16)) {                                                                        A
+        // maybe it's just wraparound on the edge of the zone
+        // - choose the closer interpretation
+        m -= (1<<17);                                                                          (A)
+    } else if (r-m > (1<<16)) {
+        m += (1<<17);
+    }
+    int32_t cprlatdiff = m - r;                                                                 A
+    int32_t abslatdiff = abs(cprlatdiff);
+    if (abslatdiff > maxcprdiff) {        // since even just lat diff is too far
+        return false;                     // no need to compute slant distance
+    }
+
+    // identify the NL zone, ours, an adjacent one, or beyond
+    if (reflat < 7.5 && reflat > 7.5) {              // one big NL zone around the equator
+        r = (int32_t) ourcprlon[mm.fflag];
+    } else if (reflat > 0) {
+      if (m < cprNL1lat[mm.fflag]) {                 // target lat in higher-NL zone
+        if (m < cprPluslat[mm.fflag]) {              // beyond the adjacent zone
+            adjacent = false;
+        }
+        r = (int32_t) ourcprlonPlus[mm.fflag];
+      } else if (m > cprNL0lat[mm.fflag]) {          // target lat in lower-NL zone
+        if (m > cprMinuslat[mm.fflag]) {             // beyond the adjacent zone
+            adjacent = false;
+        }
+        r = (int32_t) ourcprlonMinus[mm.fflag];
+      } else {
+        r = (int32_t) ourcprlon[mm.fflag];
+      }
+    } else {                                         // similar for Southern hemisphere
+...
+    }
+    m = (int32_t) mm.cprlon;
+    if (m-r > (1<<16)) {                                                                         A
+        m -= (1<<17);                                                                           (A)
+    } else if (r-m > (1<<16)) {
+        m += (1<<17);
+    }
+    int32_t cprlondiff = m - r;                                                                  A
+    int32_t abslondiff = abs(cprlondiff);
+    if (adjacent) {
+        if (abslondiff > maxcprdiff)
+            return false;
+    }
+                                                                                    TOTAL: 4 ILOPS, usually
+                                                                                          (no divisions!)
+                                                             (but a lot of comparisons, branching logic...)
+
+            RESULT: cprlatdiff, cprlondiff
+                    i.e., relative position, scaled (integers)
+                    (cprlondiff not exact, could be with more complicated code)
+                     - need more math to compute distance/bearing ()
+                     - need more math to compute more exact distance
+                     - need more math to compute lat/lon if desired
+
+
+
+
+
+
+
+
+
+
+
+

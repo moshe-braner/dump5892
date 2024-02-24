@@ -74,6 +74,16 @@ void out_discard()
     ++out_discards;
 }
 
+void output_raw()
+{
+    buf[inputchars] = '\0';
+    if (Serial.availableForWrite() > inputchars)
+        Serial.write(buf, inputchars);
+    else   // discard this sentence, let slower output catch up
+        out_discard();
+    inputchars = 0;      // start a new input sentence
+}
+
 /*
 ALL
     IDENTITY
@@ -150,7 +160,7 @@ void output_page()
         --i;
     } else {
         for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
-           if (container[i].addr)
+           if (container[i].addr)                    // the (sole) tracked aircraft
                break;
         }
         if (i == MAX_TRACKING_OBJECTS)
@@ -319,17 +329,21 @@ void output_loop()
     if (! input_complete)
         return;
     if (inputchars > 0 && settings->parsed == RAWFMT) {
-        buf[inputchars] = '\0';
-        if (Serial.availableForWrite() > inputchars)
-            Serial.write(buf, inputchars);
-        else   // discard this sentence, let slower output catch up
-            out_discard();
-        inputchars = 0;      // start a new input sentence
+        output_raw();
         return;
     }
     if (parsing_success == false)
         return;
     parsing_success = false;
+    if (inputchars > 0 && settings->parsed == RAWFILT) {   // same as RAW but filtered
+        int i = find_traffic_by_addr(fo.addr);
+        if (i == 0)                              // not in traffic table
+            return;                              // have not received a position message yet
+        if (container[i-1].positiontime == 0)    // no identity message, or filtered out 
+            return;
+        output_raw();
+        return;
+    }
     if (settings->parsed == FLDFMT) {
         if (Serial.availableForWrite() > parsedchars)
             Serial.write(parsed, parsedchars);

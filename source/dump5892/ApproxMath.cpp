@@ -146,19 +146,89 @@ float approxHypotenuse(float x, float y)
    }
 }
 
-// even faster integer version (the original code):
-// - accuracy about +- 4%
-uint32_t iapproxHypotenuse( uint32_t dx, uint32_t dy )
+
+// faster integer version (including "iteration"):
+//   - faster because integer division instead of float
+//   - accuracy about +- 0.05%, similar to float version
+uint32_t iapproxHypotenuse1( int32_t x, int32_t y )
 {
    uint32_t imin, imax, approx;
-   if ( dx < 0 ) dx = -dx;
-   if ( dy < 0 ) dy = -dy;
-   if ( dx < dy ) {
-      imin = dx;
-      imax = dy;
+   if (x == 0)
+     return y;
+   else if (y == 0)
+     return x;
+   if ( x < 0 ) x = -x;
+   if ( y < 0 ) y = -y;
+   if ( x < y ) {
+      imin = x;
+      imax = y;
    } else {
-      imin = dy;
-      imax = dx;
+      imin = y;
+      imax = x;
+   }
+   if (imax < (1<<15)) {
+       if ( imax < ( imin << 4 ))
+           approx = ( imax * (1007-40) ) + ( imin * 441 );
+       else
+           approx = ( imax * 1007 ) + ( imin * 441 );
+       approx = (( approx + 512 ) >> 10 );   // now in same scale as inputs
+       return (((approx + (imin*imin+imax*imax)/approx) + 1) >> 1);
+   } else if (imax < (1<<19)) {
+       imin   = (( imin   + (1 << 3) ) >> 4 );
+       imax   = (( imax   + (1 << 3) ) >> 4 );
+       if ( imax < ( imin << 4 ))
+           approx = ( imax * (1007-40) ) + ( imin * 441 );
+       else
+           approx = ( imax * 1007 ) + ( imin * 441 );
+       approx = (( approx + 512 ) >> 10 );
+       return ((approx + (imin*imin+imax*imax)/approx) << 3);
+   } else if (imax < (1<<23)) {
+       imin   = (( imin   + (1 << 7) ) >> 8 );
+       imax   = (( imax   + (1 << 7) ) >> 8 );
+       if ( imax < ( imin << 4 ))
+           approx = ( imax * (1007-40) ) + ( imin * 441 );
+       else
+           approx = ( imax * 1007 ) + ( imin * 441 );
+       approx = (( approx + 512 ) >> 10 );
+       return ((approx + (imin*imin+imax*imax)/approx) << 7);
+   } else if (imax < (1<<27)) {
+       imin   = (( imin   + (1 << 11) ) >> 12 );
+       imax   = (( imax   + (1 << 11) ) >> 12 );
+       if ( imax < ( imin << 4 ))
+           approx = ( imax * (1007-40) ) + ( imin * 441 );
+       else
+           approx = ( imax * 1007 ) + ( imin * 441 );
+       approx = (( approx + 512 ) >> 10 );
+       return ((approx + (imin*imin+imax*imax)/approx) << 11);
+   }
+   imin   = (( imin   + (1 << 15) ) >> 16 );
+   imax   = (( imax   + (1 << 15) ) >> 16 );
+   if ( imax < ( imin << 4 ))
+       approx = ( imax * (1007-40) ) + ( imin * 441 );
+   else
+       approx = ( imax * 1007 ) + ( imin * 441 );
+   approx = (( approx + 512 ) >> 10 );
+   return ((approx + (imin*imin+imax*imax)/approx) << 15);
+}
+
+// even faster but rough integer version (the original code, without "iteration"):
+//   - only OK for x, y under about 2^20 in magnitude
+//   - accuracy about +- 4%
+uint32_t iapproxHypotenuse0( int32_t x, int32_t y )
+{
+   uint32_t imin, imax, approx;
+   if (x == 0)
+     return y;
+   else if (y == 0)
+     return x;
+   if ( x < 0 ) x = -x;
+   if ( y < 0 ) y = -y;
+   if ( x < y ) {
+      imin = x;
+      imax = y;
+   } else {
+      imin = y;
+      imax = x;
    }
    approx = ( imax * 1007 ) + ( imin * 441 );
    if ( imax < ( imin << 4 ))

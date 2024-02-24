@@ -220,32 +220,30 @@ void traffic_update(int i)
             farthest.dist = fop->approx_dist;   // may not really be the farthest any more
     }
 
-    // fill in fields that require relatively expensive "math":
+    // fill in the fields that require relatively expensive "math":
     if (fop->updatetime < fop->velocitytime) {   // may lag by up to 1 second
         // Compute velocity and angle from the two speed components
-        fop->groundspeed =
-              (int) approxHypotenuse((float)fop->nsv, (float)fop->ewv);
+        fop->groundspeed = iapproxHypotenuse0(fop->nsv, fop->ewv);
         if (fop->groundspeed > 0) {
-            fop->track =
-                  (int) atan2_approx((float)fop->nsv, (float)fop->ewv);
+            fop->track = iatan2_approx(fop->nsv, fop->ewv);
             // We don't want negative values but a 0-360 scale.
             if (fop->track < 0)
                 fop->track += 360;
             fop->track_is_valid = 1;
 #if defined(TESTING)
-        uint32_t approx_groundspeed = iapproxHypotenuse( fop->nsv, fop->ewv );
-        if (fop->groundspeed > 1.05 * (float)approx_groundspeed)
+        float fgroundspeed = approxHypotenuse( (float)fop->nsv, (float)fop->ewv );
+        if ((float)fop->groundspeed > 1.05 * fgroundspeed)
             ++upd_by_gs_incorrect[1];
-        else if (fop->groundspeed < 0.95 * (float)approx_groundspeed)
+        else if ((float)fop->groundspeed < 0.95 * fgroundspeed)
             ++upd_by_gs_incorrect[1];
         else
             ++upd_by_gs_incorrect[0];
-        int16_t approx_track = iatan2_approx(fop->nsv, fop->ewv);
-        if (approx_track > 270 && fop->track < 90)
-            approx_track -= 360;
-        else if (approx_track < 90 && fop->track > 270)
-            approx_track += 360;
-        if (abs(approx_track - fop->track) > 3)
+        float ftrack = atan2_approx((float)fop->nsv, (float)fop->ewv);
+        if (ftrack > 270 && fop->track < 90)
+            ftrack -= 360;
+        else if (ftrack < 90 && fop->track > 270)
+            ftrack += 360;
+        if (fabs(ftrack - fop->track) > 3)
             ++upd_by_trk_incorrect[1];
         else
             ++upd_by_trk_incorrect[0];
@@ -279,6 +277,13 @@ void traffic_update(int i)
                 ++upd_by_dist_incorrect[1];
             else
                 ++upd_by_dist_incorrect[0];
+            float idist = 0.001*(float)iapproxHypotenuse1((int32_t)(1000*x), (int32_t)(1000*y));
+            if (fop->distance > 1.01 * idist)
+                ++ihypot_incorrect[1];
+            else if (fop->distance < 0.99 * idist)
+                ++ihypot_incorrect[1];
+            else
+                ++ihypot_incorrect[0];
 #endif
             int16_t ib = (int16_t) atan2_approx(y, x);     /* degrees from ref to target */
             if (ib < 0)

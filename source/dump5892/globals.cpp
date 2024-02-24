@@ -91,4 +91,5 @@ int upd_by_gs_incorrect[2];
 int upd_by_trk_incorrect[2];
 int upd_by_dist_incorrect[2];
 int upd_by_brg_incorrect[2];
+int ihypot_incorrect[2];
 #endif

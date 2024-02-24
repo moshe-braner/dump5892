@@ -12,12 +12,13 @@
 #define EEPROM_H
 
 #define EEPROM_MAGIC   0x10905892
-#define EEPROM_VERSION 0x00000002
+#define EEPROM_VERSION 0x00000003
 
 enum
 {
     NOTHING,
     RAWFMT,
+    RAWFILT,
     FLDFMT,
     DECODED,
     LSTFMT,

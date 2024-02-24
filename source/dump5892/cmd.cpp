@@ -20,6 +20,10 @@ static void send5892(const char *cmd)
 
 void play5892()
 {
+if(settings->debug)
+Serial.println("\n(un-paused)");
+else
+    Serial.println("");
     if (settings->incl_rssi) {
         if (settings->dfs == ALLDFS) send5892("#49-82");
         else                         send5892("#49-83");
@@ -34,6 +38,9 @@ void pause5892()
 {
     send5892("#49-00");
     paused = true;
+if(settings->debug)
+Serial.println("\n(paused)");
+else
     Serial.println("");
 }
 
@@ -89,6 +96,7 @@ Output format:\n\
 reflat, reflon, time_string(true),
 (settings->parsed==NOTHING? "NON - do not export detailed data" :
  settings->parsed==RAWFMT?  "RAW - export raw hex format" :
+ settings->parsed==RAWFILT? "FIL - export raw, but filtered" :
  settings->parsed==FLDFMT?  "FLD - export hex format with fields separated" :
  settings->parsed==DECODED? "DEC - export in fully decoded format" :
  settings->parsed==LSTFMT?  "LST - list-format output of traffic table" :
@@ -200,7 +208,7 @@ static void stats()
             Serial.printf("    [%2d] %6d\n", i, msg_by_hour[i]);
     }
 
-    if (settings->parsed == RAWFMT || settings->parsed == FLDFMT)
+    if (settings->parsed == RAWFMT || settings->parsed == RAWFILT || settings->parsed == FLDFMT)
         return;
 
     delay(100);
@@ -223,16 +231,6 @@ static void stats()
     Serial.printf("    [< 6 nm] %6d\n", msg_by_dst_cat[0]);
     Serial.printf("    [3-30nm] %6d\n", msg_by_dst_cat[1]);
     Serial.printf("    [> 30nm] %6d\n", msg_by_dst_cat[2]);
-#if defined(TESTING)
-    Serial.printf("    dst approx correct: %6d\n", upd_by_dist_incorrect[0]);
-    Serial.printf("               not:     %6d\n", upd_by_dist_incorrect[1]);
-    Serial.printf("    brg approx correct: %6d\n", upd_by_brg_incorrect[0]);
-    Serial.printf("               not:     %6d\n", upd_by_brg_incorrect[1]);
-    Serial.printf("     gs approx correct: %6d\n", upd_by_gs_incorrect[0]);
-    Serial.printf("               not:     %6d\n", upd_by_gs_incorrect[1]);
-    Serial.printf("    trk approx correct: %6d\n", upd_by_trk_incorrect[0]);
-    Serial.printf("               not:     %6d\n", upd_by_trk_incorrect[1]);
-#endif
     delay(100);
     Serial.println("\nMessages by aircraft type:");
     for (i=0; i<16; i++) {
@@ -250,6 +248,19 @@ static void stats()
         if (ticks_by_numtracked[i] > 0)
             Serial.printf("    [%2d] %6d\n", i, ticks_by_numtracked[i]);
     }
+#if defined(TESTING)
+    delay(100);
+    Serial.printf("    dst approx correct: %6d\n", upd_by_dist_incorrect[0]);
+    Serial.printf("               not:     %6d\n", upd_by_dist_incorrect[1]);
+    Serial.printf("    brg approx correct: %6d\n", upd_by_brg_incorrect[0]);
+    Serial.printf("               not:     %6d\n", upd_by_brg_incorrect[1]);
+    Serial.printf("     gs approx correct: %6d\n", upd_by_gs_incorrect[0]);
+    Serial.printf("               not:     %6d\n", upd_by_gs_incorrect[1]);
+    Serial.printf("    trk approx correct: %6d\n", upd_by_trk_incorrect[0]);
+    Serial.printf("               not:     %6d\n", upd_by_trk_incorrect[1]);
+    Serial.printf("    ihypotenus correct: %6d\n", ihypot_incorrect[0]);
+    Serial.printf("               not:     %6d\n", ihypot_incorrect[1]);
+#endif
 }
 
 static void help()
@@ -275,6 +286,7 @@ Serial.println("\
 Settings affecting output format:\n\
 NON - do not export detailed data\n\
 RAW - export raw hex format\n\
+FIL - export raw but filtered\n\
 FLD - export in hex format with fields separated\n\
 DEC - export in fully decoded format\n\
 LST - list format output of traffic table (every 4 seconds)\n\
@@ -376,6 +388,7 @@ Serial.println("(empty command)");
   // Settings without parameters:
   if (setvalue("NON", cmd, &settings->parsed, NOTHING, "do not export detailed data"))  return;
   if (setvalue("RAW", cmd, &settings->parsed, RAWFMT, "export raw hex format"))  return;
+  if (setvalue("FIL", cmd, &settings->parsed, RAWFILT, "export raw but filtered"))  return;
   if (setvalue("FLD", cmd, &settings->parsed, FLDFMT, "export hex format with fields separated"))  return;
   if (setvalue("DEC", cmd, &settings->parsed, DECODED, "export in fully decoded format"))  return;
   if (setvalue("LST", cmd, &settings->parsed, LSTFMT, "list-format output of traffic table"))  return;
@@ -401,7 +414,9 @@ Serial.println("(empty command)");
       maxcprdiff = (1<<16);
       maxrange10 = 1800;
       settings->alts = ALLALTS;
-      Serial.println("> show traffic at all distances and altitudes");
+      settings->ac_type = 0;
+      settings->follow = 0;
+      Serial.println("> show all traffic - distances, altitudes, types, ID");
       return;
   }
 

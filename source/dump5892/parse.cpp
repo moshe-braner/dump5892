@@ -89,6 +89,12 @@ static bool parse_identity(bool justparse, char s)
         // 0xD heavy
         // 0xE high perf
         // 0xF rotorcraft
+
+    // filter by aircraft type
+    // if (settings->ac_type != 0 && fo.aircraft_type != settings->ac_type)
+    //     return false;
+    // - instead let update_traffic_position() handle it
+
     //raw_callsign = last 6 bytes
     if (justparse) {
         for (int m=0; m<6; m++) {
@@ -134,9 +140,7 @@ static bool parse_position(bool justparse, char s)
 
     // Most receiveable signals are from farther away than we may be interested in.
     // An efficient way to filter them out at this early stage will save a lot of CPU cycles.
-    // Note: cprlat is scaled as 2^17 * dLat, and dLat is about 6 degrees = 360 nm.
-    // OTOH cprlon is scaled by dLon, which varies - but in proportion to cos(lat),
-    // thus cprlon is actually scaled almost the same as cprlat.  (Both within 2%)
+
     int32_t m = (int32_t) mm.cprlat;
     int32_t r = (int32_t) ourcprlat[mm.fflag];   // convert from unsigned to signed...
     if (m-r > (1<<16)) {
@@ -156,19 +160,38 @@ Serial.println("lat wraparound up...");
         return false;                     // no need to compute slant distance
     }
 
+    // identify the NL zone, ours, an adjacent one, or beyond
     bool adjacent = true;
-    if (m < cprNL1lat[mm.fflag]) {                   // target lat in higher-NL zone
+    if (reflat < 7.5 && reflat > 7.5) {              // one big NL zone around the equator
+        r = (int32_t) ourcprlon[mm.fflag];
+    } else if (reflat > 0) {
+      if (m < cprNL1lat[mm.fflag]) {                 // target lat in higher-NL zone
         if (m < cprPluslat[mm.fflag]) {              // beyond the adjacent zone
             adjacent = false;
         }
         r = (int32_t) ourcprlonPlus[mm.fflag];
-    } else if (m > cprNL0lat[mm.fflag]) {            // target lat in lower-NL zone
+      } else if (m > cprNL0lat[mm.fflag]) {          // target lat in lower-NL zone
         if (m > cprMinuslat[mm.fflag]) {             // beyond the adjacent zone
             adjacent = false;
         }
         r = (int32_t) ourcprlonMinus[mm.fflag];
-    } else {
+      } else {
         r = (int32_t) ourcprlon[mm.fflag];
+      }
+    } else {                                         // reflat < 0
+      if (m > cprNL1lat[mm.fflag]) {                 // in higher-NL zone (towards equator)
+        if (m > cprPluslat[mm.fflag]) {              // beyond the adjacent zone
+            adjacent = false;
+        }
+        r = (int32_t) ourcprlonPlus[mm.fflag];
+      } else if (m < cprNL0lat[mm.fflag]) {          // in lower-NL zone (towards south pole)
+        if (m < cprMinuslat[mm.fflag]) {             // beyond the adjacent zone
+            adjacent = false;
+        }
+        r = (int32_t) ourcprlonMinus[mm.fflag];
+      } else {
+        r = (int32_t) ourcprlon[mm.fflag];
+      }
     }
     m = (int32_t) mm.cprlon;
     if (m-r > (1<<16)) {
@@ -187,19 +210,24 @@ Serial.println("lon wraparound up...");
             return false;
     }
 
-    // use hypothenus-approximation from:
+    // use hypotenus-approximation from:
     //   https://www.flipcode.com/archives/Fast_Approximate_Distance_Functions.shtml
     // but modify the factors to scale from cpr units directly into tenths-of-nm.
     // Even zone of latitude is 6 degrees = 360 nm, odd zone is 60/59 times larger.
+    // Note: cprlat is scaled as 2^17 * dLat, and dLat is about 6 degrees = 360 nm.
+    // OTOH cprlon is scaled by dLon, which varies - but in proportion to cos(lat),
+    // thus cprlon is actually scaled almost the same as cprlat (within 2%).
     // In CPR coding a zone = 2^17.  3600/2^17 * 2^(16-10) = 1.758, so multiply the
     // algorithm's coefficients by that, e.g., 1007 -> 1770 (for even zone).
-    // This is not exact since latitude zones are scaled slightly different.
-    // And of course this hypothenus algorithm is not at all exact.
-    // It could be greatly improved with one "iteration" but at the cost of an
-    //    integer division, is it worth it?
+    // This is not exact since longitude zones are scaled slightly differently.
+    // And of course this hypotenus algorithm is not at all exact (roughly +-3%).
+    // It could be greatly improved with one "iteration", is it worth it?
+    // Probably not, unless abslondiff is adjusted for the dLon/dLat*cos(lat) ratio
+    // (which would need pre-computed ratios for the 3 zones, odd/even in each).
     int far = 0;       // very close
     int32_t d = 0;
     if (adjacent) {
+
         if ( abslatdiff < abslondiff ) {
            m = abslatdiff;
            r = abslondiff;
@@ -207,6 +235,21 @@ Serial.println("lon wraparound up...");
            m = abslondiff;
            r = abslatdiff;
         }
+
+        if (mm.fflag) {
+           if ( r < ( m << 4 ))
+              d = ( r * (1800-72) ) + ( m * 788 );   // tenths-of-nm, odd
+           else
+              d = ( r * 1800 ) + ( m * 788 );
+        } else {
+           if ( r < ( m << 4 ))
+              d = ( r * (1770-71) ) + ( m * 775 );   // tenths-of-nm, even
+           else
+              d = ( r * 1770 ) + ( m * 775 );
+        }
+        d = (( d + (1<<15) ) >> 16 );
+/*
+        // original version
         if (mm.fflag)
            d = ( r * 1800 ) + ( m * 788 );      // tenths-of-nm, odd
         else
@@ -214,6 +257,41 @@ Serial.println("lon wraparound up...");
         if ( r < ( m << 4 ))
            d -= ( r * 71 );
         d = (( d + (1<<15) ) >> 16 );
+*/
+/*
+        // Version with "iteration" added:
+        if ( abslatdiff < abslondiff ) {
+           m = abslatdiff;
+           r = abslondiff;
+        } else {
+           m = abslondiff;
+           r = abslatdiff;
+        }
+        // First scale m & r by 1.758:
+        if (mm.fflag) {
+            m = ((1831 * m + (1<<9)) >> 10);
+            r = ((1831 * r + (1<<9)) >> 10);
+        } else {
+            m = ((1800 * m + (1<<9)) >> 10);
+            r = ((1800 * r + (1<<9)) >> 10);
+        }
+        // Then approximate the hypotenus:
+        // These coefficients need a >> 10.
+        d = ( r * 1007 ) + ( m * 441 );
+        if ( r < ( m << 4 ))
+            d -= ( r * 40 );
+        // d is now in the range 0-1800 * 2^16
+        // Do the >> 10 and also scale as >> 2:
+        d = (( d + (1<<11) ) >> 12 );
+        // Results are now in the range 0-1800 * 2^4
+        // Scale m & r by same >> 2:
+        m = (( m + (1<<1) ) >> 2 );
+        r = (( r + (1<<1) ) >> 2 );
+        // Now the "iteration":
+        d = ((d + (m*m+r*r)/d) >> 1);     // here is the (integer) division
+        // Final scaling
+        d = (( d + (1<<3) ) >> 4 );
+*/
         fo.approx_dist = (uint16_t) d;
         if (d > 60) {      // > 6nm
             far = 1;
@@ -298,7 +376,7 @@ Serial.printf("position: altitude: %d\n", fo.altitude);
             fo.approx_dist = 0;
             return false;
         } else if (decoded == 2) {   // beyond adjacent NL zones
-            fo.approx_dist = 0;      // cannot compute
+            fo.approx_dist = 0;      // cannot compute distance here
         } else {
             if (fo.approx_dist == 0)
                 fo.approx_brg = 0;
@@ -535,6 +613,10 @@ bool parse(char *buf, int n)
 
     // ICAO address
     fo.addr = (msg[1] << 16) | (msg[2] << 8) | msg[3];
+
+    // filter by identity
+    if (settings->follow != 0 && fo.addr != settings->follow)
+        return false;
 
     // parsing of the 56-bit ME - just DF 17-18:
     // DF19 is military, encrypted, show something anyway?

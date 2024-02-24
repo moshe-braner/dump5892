@@ -246,13 +246,13 @@ rlon, reflon, fabs(rlat-reflat)/dLat[mm.fflag]);
             flrlon2 = flrlonMinus[mm.fflag];
             modlon2 = modlonMinus[mm.fflag];
         } else {
-            // This should not happen!  (Shift into non-adjacent zone.)
+            // Shift into non-adjacent zone.  This can be < 100 miles away at lat>45.
             // No choice but to do the full NL search and recompute.
             int NL2 = cprNLFunction_(absrlat, 1, 59);     // = cprNLFunction(rlat)
             effort = 2;
             dLon2 = cprDlonFunction(mm.fflag, NL2);
-if(settings->debug)
-Serial.printf("bzzzt! NL=%d  NL2=%d   dLon2=%.3f\n", NL[mm.fflag], NL2, dLon2);
+if(settings->debug>1)
+Serial.printf("non-adjacent! NL=%d  NL2=%d   dLon2=%.3f\n", NL[mm.fflag], NL2, dLon2);
             scaled = reflon * cprDlonInvFunction(mm.fflag, NL2);
             flrlon2 = floor(scaled);
             modlon2 = scaled - flrlon2;
@@ -310,10 +310,6 @@ void CPRRelative_precomp()
     reflat = settings->latitude;
     reflon = settings->longitude;
 
-if (reflat < 0) {
-Serial.println("\n >>>>>> WARNING: STILL NEED TO MAKE ADJUSTMENTS");
-Serial.println("          IN THE SOURCE CODE FOR NEGATIVE LATITUDES\n");
-}
     for (int k=0; k<2; k++) {  // odd/even
         float invdLat = (k ? 59.0/360.0 : 60.0/360.0);
         // float scaled = reflat / dLat[k];
@@ -339,12 +335,16 @@ Serial.println("          IN THE SOURCE CODE FOR NEGATIVE LATITUDES\n");
         //     - our lat is < NLtable[NL[k]], and >= NLtable[NL[k]+1]
         // note these out-of-bounds cpr values are signed!
         float edgelat = NLtable[NL[k]-1];
+        if (reflat < 0)  edgelat = -edgelat;
         cprMinuslat[k] = (int32_t)((edgelat-lat0) / dLat[k] * (float)(1<<17) + 0.5);
         edgelat = NLtable[NL[k]];
+        if (reflat < 0)  edgelat = -edgelat;
         cprNL0lat[k] = (int32_t)((edgelat-lat0) / dLat[k] * (float)(1<<17) + 0.5);
         edgelat = NLtable[NL[k]+1];
+        if (reflat < 0)  edgelat = -edgelat;
         cprNL1lat[k] = (int32_t)((edgelat-lat0) / dLat[k] * (float)(1<<17) + 0.5);
         edgelat = NLtable[NL[k]+2];
+        if (reflat < 0)  edgelat = -edgelat;
         cprPluslat[k] = (int32_t)((edgelat-lat0) / dLat[k] * (float)(1<<17) + 0.5);
 
         // pre-compute some other values for adjacent NL zones
@@ -365,6 +365,28 @@ Serial.println("          IN THE SOURCE CODE FOR NEGATIVE LATITUDES\n");
         ourcprlonMinus[k] = (uint32_t) ((reflon - dLonMinus[k]*flrlonMinus[k])/dLonMinus[k] * (float)(1<<17) + 0.5);
 
 #if defined(TESTING)
+if(settings->debug) {
+        Serial.printf("[%d] dLat           = %f\n", k, dLat[k]);
+        Serial.printf("[%d] flrlat         = %f\n", k, flrlat[k]);
+        Serial.printf("[%d] modlat         = %f\n", k, modlat[k]);
+        Serial.printf("[%d] ourcprlat      = %d\n", k, ourcprlat[k]);
+        Serial.printf("[%d] cprMinuslat    = %d\n", k, cprMinuslat[k]);
+        Serial.printf("[%d] cprNL0lat      = %d\n", k, cprNL0lat[k]);
+        Serial.printf("[%d] cprNL1lat      = %d\n", k, cprNL1lat[k]);
+        Serial.printf("[%d] cprPluslat     = %d\n", k, cprPluslat[k]);
+        Serial.printf("[%d] dLon           = %f\n", k, dLon[k]);
+        Serial.printf("[%d] dLonPlus       = %f\n", k, dLonPlus[k]);
+        Serial.printf("[%d] dLonMinus      = %f\n", k, dLonMinus[k]);
+        Serial.printf("[%d] flrlon         = %f\n", k, flrlon[k]);
+        Serial.printf("[%d] flrlonPlus     = %f\n", k, flrlonPlus[k]);
+        Serial.printf("[%d] flrlonMinus    = %f\n", k, flrlonMinus[k]);
+        Serial.printf("[%d] modlon         = %f\n", k, modlon[k]);
+        Serial.printf("[%d] modlonPlus     = %f\n", k, modlonPlus[k]);
+        Serial.printf("[%d] modlonMinus    = %f\n", k, modlonMinus[k]);
+        Serial.printf("[%d] ourcprlon      = %d\n", k, ourcprlon[k]);
+        Serial.printf("[%d] ourcprlonPlus  = %d\n", k, ourcprlonPlus[k]);
+        Serial.printf("[%d] ourcprlonMinus = %d\n", k, ourcprlonMinus[k]);
+}
         // test the computation of our cprlat/lon along with the decoding:
         mm.cprlat = ourcprlat[k];
         mm.cprlon = ourcprlon[k];

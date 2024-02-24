@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v01"
+#define FIRMWARE_VERSION "v02"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -145,6 +145,7 @@ extern int upd_by_gs_incorrect[2];
 extern int upd_by_trk_incorrect[2];
 extern int upd_by_dist_incorrect[2];
 extern int upd_by_brg_incorrect[2];
+extern int ihypot_incorrect[2];
 #endif
 
 void reset5892();
