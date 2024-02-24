@@ -2,16 +2,13 @@
 
 Software for DIY 1090ES ADS-B receiver based on the GNS 5892 module
 
-Last updated February 22, 2024
-
 ## Background
 
 DIY receivers for 1090ES ADS-B messages have settled on SDR methods.  The receiver is broadband and the software looks for certain types of signals within the huge amount of raw data from the SDR module.  This processing of the data requires significant processing power.  So much so that the typical hardware (Raspberry Pi) needs a fan for cooling.  This is not a good approach for portable devices that need to run on a battery for many hours.
 
 Modules do exist for receiving and processing 1090 MHz transponder data specifically.  One is the GNS 5892.  It is small, low-power (1/8 of a watt), and relatively inexpensive.  This project focuses on creating software to handle the data stream from a GNS 5892.
 
-The goal is to integrate these hardware and software modules into SoftRF
-  https://github.com/moshe-braner/SoftRF  
+The goal is to integrate these hardware and software modules into [SoftRF](https://github.com/moshe-braner/SoftRF) 
 running on a "T-Beam" board with an ESP32 processor.  The processor is already pretty busy doing everything else in SoftRF.  Thus the addition of the ADS-B receiving functions needs to be done in as efficient a manner as possible.  All aspects of the data processing in dump5892 are therefore optimized as best as possible.  Values are pre-computed, lookup tables prepared, integer math is used instead of floating point where possible, etc.  Also the software has the ability to filter out traffic that is "too far" or "too high" etc early in the processing.
 
 The data processing has been wrapped in additional software that turns it into a standalone "app" that can also be used to explore the local air traffic.
@@ -36,17 +33,26 @@ The source code handling the CPR decoding still needs some adjustments for use i
 
 ## Future plans
 
+
 ## Links
 
 Open [discussion forum](https://gitter.im/SoftRF-open/community).
 <br>
-<br>
 
 [Source code](https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
-<br>
 <br>
 
 [Compiled binaries for ESP32](https://github.com/moshe-braner/dump5892/tree/master/binaries)
 <br>
-<br>
 
+
+## Version history
+
+### revision 02
+
+Completed handling of southern-hemisphere latitudes.
+Added raw-but-filtered output option.
+
+### revision 01
+
+Initial version.
