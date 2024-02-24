@@ -8,8 +8,7 @@ DIY receivers for 1090ES ADS-B messages have settled on SDR methods.  The receiv
 
 Modules do exist for receiving and processing 1090 MHz transponder data specifically.  One is the GNS 5892.  It is small, low-power (1/8 of a watt), and relatively inexpensive.  This project focuses on creating software to handle the data stream from a GNS 5892.
 
-The goal is to integrate these hardware and software modules into SoftRF
-  https://github.com/moshe-braner/SoftRF  
+The goal is to integrate these hardware and software modules into [SoftRF](https://github.com/moshe-braner/SoftRF) 
 running on a "T-Beam" board with an ESP32 processor.  The processor is already pretty busy doing everything else in SoftRF.  Thus the addition of the ADS-B receiving functions needs to be done in as efficient a manner as possible.  All aspects of the data processing in dump5892 are therefore optimized as best as possible.  Values are pre-computed, lookup tables prepared, integer math is used instead of floating point where possible, etc.  Also the software has the ability to filter out traffic that is "too far" or "too high" etc early in the processing.
 
 The data processing has been wrapped in additional software that turns it into a standalone "app" that can also be used to explore the local air traffic.
@@ -18,7 +17,7 @@ The data processing has been wrapped in additional software that turns it into a
 
 The target hardware is the GNS5892 module and a generic ESP32 board.  They should be connected with short wires, as the output baud rate of the GNS5892 is 921600 baud.  The 3.3V power output from a typical ESP32 board should be able to supply the GNS5892 the 40 mA it requires.
 
-The USB jack of the ESP32 board should then be connected to a computer on which a USB terminal program is running.  It serves as both the user interface for commands and operational info, as well as the data collection tool, by letting it run for a while and then saving the text in the terminal program.  Other software could theoretically be written to handle the computer side of things in friendlier ways.
+The USB jack of the ESP32 board should then be connected to a computer on which a USB terminal program is running at 115200 baud.  It serves as both the user interface for commands and operational info, as well as the data collection tool, by letting it run for a while and then saving the text in the terminal program.  Other software could theoretically be written to handle the computer side of things in friendlier ways.
 
 The "app" running on the ESP32 has various settings and modes.  Type "?" into the terminal to see the list of commands.  ADS-B messages in the format output by the GNS5892 can also be entered into the terminal and will be processed in the same way as messages coming from the GNS5892.  This is useful for debugging.
 
@@ -34,17 +33,26 @@ The source code handling the CPR decoding still needs some adjustments for use i
 
 ## Future plans
 
+
 ## Links
 
 Open [discussion forum](https://gitter.im/SoftRF-open/community).
 <br>
+
+[Source code](https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
 <br>
 
-[Source code] (https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
-<br>
-<br>
-
-[Compiled binaries for ESP32] (https://github.com/moshe-braner/dump5892/tree/master/binaries)
-<br>
+[Compiled binaries for ESP32](https://github.com/moshe-braner/dump5892/tree/master/binaries)
 <br>
 
+
+## Version history
+
+### revision 02
+
+Completed handling of southern-hemisphere latitudes.
+Added raw-but-filtered output option.
+
+### revision 01
+
+Initial version.
