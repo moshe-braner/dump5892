@@ -27,9 +27,8 @@ The source code is set up to compile for ESP32 under the Arduino IDE.
 
 ## Status
 
-The dump5892 version here is an Alpha test.  It has not even been tested with a GNS5892 module yet!  It has been tested with some sample ADS-B messages from the terminal.
+The dump5892 version here is an Alpha test.  It has been briefly tested with a GNS5892 module, as well as with some sample ADS-B messages from the terminal.
 
-The source code handling the CPR decoding still needs some adjustments for use in the Southern hemisphere, that will come later.
 
 ## Future plans
 
