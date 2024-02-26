@@ -25,13 +25,6 @@ Due to the focus on preparing software for situational awareness in a portable d
 
 The source code is set up to compile for ESP32 under the Arduino IDE.
 
-## Status
-
-The dump5892 version here is an Alpha test.  It has been briefly tested with a GNS5892 module, as well as with some sample ADS-B messages from the terminal.
-
-
-## Future plans
-
 
 ## Links
 
@@ -46,6 +39,13 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 
 
 ## Version history
+
+### revision 03
+
+Added message-type field (I/P/V) to output.
+Made TXT output columns consistent.
+Removed spaces from output sentences in TAB & CSV formats.
+Fixed some UI bugs.
 
 ### revision 02
 
