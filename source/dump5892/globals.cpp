@@ -33,7 +33,7 @@ uint32_t timenow;  // seconds
 ourclock_t ourclock;
 
 // variables filled in by message parsing
-mm_t mm;
+mm_t mm, EmptyMsg;
 
 // variables precomputed for decoding of CPR lat/lon, based on our own location
 int NL[2];

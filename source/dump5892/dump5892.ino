@@ -14,7 +14,7 @@
 
 void setup()
 {
-  Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // or should this be done after begin()?
+  Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // needs to be done before begin() or it does not work
   Serial.begin(SERIAL_OUT_BR, SERIAL_8N1);
 
   Serial.println();
@@ -76,9 +76,12 @@ void out_discard()
 
 void output_raw()
 {
-    buf[inputchars] = '\0';
+    buf[inputchars++] = ';';
+    buf[inputchars++] = '\r';
+    buf[inputchars++] = '\n';
+    //buf[inputchars] = '\0';
     if (Serial.availableForWrite() > inputchars)
-        Serial.write(buf, inputchars);
+        Serial.write(buf, inputchars+3);
     else   // discard this sentence, let slower output catch up
         out_discard();
     inputchars = 0;      // start a new input sentence
@@ -115,32 +118,37 @@ void output_decoded()
 {
     if (mm.frame != 17 && mm.frame != 18)
         return;
-    const char *s = (settings->format==TXTFMT? " " : settings->format==TABFMT? "\t" : ",");
     // construct a single line of text about the last arrived message
+    const char *cs = ((fo.callsign[0] != '\0' || settings->format!=TXTFMT)? fo.callsign : "        ");
+    const char *fmt;
     if (settings->dstbrg) {
-      snprintf(parsed, PARSE_BUF_SIZE,
-        "%s%s%02d%s%02d%s%06X%s%s%s%02d%s%5.1f%s%3d%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-        //tm rssi  DF    ID    cs  actyp  dst    brg  altitud altdif vs nsv ewv aspd  hdg
-        time_string(true), s,
-        fo.rssi, s, mm.frame, s, fo.addr, s, fo.callsign, s,
-        fo.aircraft_type, s,
-        (fo.distance==0? 0.1*(float)fo.approx_dist : fo.distance),s,
-        (fo.distance==0? fo.approx_brg  : fo.bearing),s,
-        (fo.alt_type? "g" : "b"), s, fo.altitude, s,
-        fo.alt_diff, s, fo.vert_rate, s,
-        fo.nsv, s, fo.ewv, s,
-        fo.airspeed, s, fo.heading);
+      if (settings->format==TABFMT)
+        fmt = "%s\t%02d\t%02d\t%c\t%06X\t%s\t%d\t%.1f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+      else if (settings->format==CSVFMT)
+        fmt = "%s,%02d,%02d,%c,%06X,%s,%d,%.1f,%d,%d,%d,%d,%d,%d,%d,%d\r\n";
+      else // TXTFMT
+        fmt = "%s %02d %02d %c %06X %s %02d %5.1f %3d %5d %5d %5d %4d %4d %3d %3d\r\n";
+            //tm rssi DF msgtyp ID cs actyp dst  brg altitud altdif vs nsv ewv aspd hdg
+      snprintf(parsed, PARSE_BUF_SIZE, fmt,
+        time_string(true),
+        fo.rssi, mm.frame, mm.msgtype, fo.addr, cs, fo.aircraft_type,
+        (fo.distance==0? 0.1*(float)fo.approx_dist : fo.distance),
+        (fo.distance==0? fo.approx_brg  : fo.bearing),
+        fo.altitude, fo.alt_diff, fo.vert_rate,
+        fo.nsv, fo.ewv, fo.airspeed, fo.heading);
     } else {
-      snprintf(parsed, PARSE_BUF_SIZE,
-        "%s%s%02d%s%02d%s%06X%s%s%s%02d%s%9.4f%s%9.4f%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-        //tm rssi  DF    ID    cs  actyp  lat    lon    altitud altdif vs nsv ewv aspd  hdg
-        time_string(true), s,
-        fo.rssi, s, mm.frame, s, fo.addr, s, fo.callsign, s,
-        fo.aircraft_type, s,
-        fo.latitude, s, fo.longitude, s, (fo.alt_type? "g" : "b"), s, fo.altitude, s,
-        fo.alt_diff, s, fo.vert_rate, s,
-        fo.nsv, s, fo.ewv, s,
-        fo.airspeed, s, fo.heading);
+    if (settings->format==TABFMT)
+      fmt = "%s\t%d\t%d\t%c\t%06X\t%s\t%d\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+    else if (settings->format==CSVFMT)
+      fmt = "%s,%d,%d,%c,%06X,%s,%d,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d\r\n";
+    else // TXTFMT
+      fmt = "%s %02d %02d %c %06X %s %02d %9.4f %9.4f %5d %5d %5d %4d %4d %3d %3d\r\n";
+           //tm rssi DF msgtyp ID cs actyp lat lon altitud altdif vs nsv ewv aspd hdg
+      snprintf(parsed, PARSE_BUF_SIZE, fmt,
+        time_string(true),
+        fo.rssi, mm.frame, mm.msgtype, fo.addr, cs, fo.aircraft_type,
+        fo.latitude, fo.longitude, fo.altitude, fo.alt_diff, fo.vert_rate,
+        fo.nsv, fo.ewv, fo.airspeed, fo.heading);
     }
     parsedchars = strlen(parsed);
     if (Serial.availableForWrite() > parsedchars)
@@ -177,7 +185,7 @@ void output_page()
     snprintf(parsed, PARSE_BUF_SIZE,
 "\
 %s      %d seconds since last position report\n\
-ICAO %06X  Callsign %s  Aircraft Type: %s  RSSI=%02d  DF%02d\n\
+ICAO %06X  Callsign %s  Aircraft Type: %s  RSSI=%02d\n\
 Latitude = %9.4f   Longitude = %9.4f\n\
      - From here:  %5.1 nm, %d bearing\n\
 Altitude = %5d (%s) (GNSS altitude rel to baro altitude: %3d)\n\
@@ -185,7 +193,7 @@ Vertical speed = %5d fpm\n\
 Groundspeed = %4d knots   Track   = %3d\n\
 Airspeed    = %4d knots   Heading = %3d\n",
         time_string(true), timesince,
-        fop->addr, fop->callsign, ac_type_label[fop->aircraft_type], fop->rssi, mm.frame,
+        fop->addr, fop->callsign, ac_type_label[fop->aircraft_type], fop->rssi,
         (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
         (fop->distance==0? fop->approx_brg  : fop->bearing),
         fop->latitude, fop->longitude, fop->altitude, (fop->alt_type? "GNSS" : "barometric"),
@@ -209,51 +217,63 @@ void output_list()
   if (! active) {
       if (millis() < nexttime)
           return;
-      nexttime = millis() + 4000;   // report every 4 seconds
+      nexttime = millis() + 4000;
       if (num_tracked == 0)
-          return;                  // try again in another 4 seconds
+          return;                // try again in another 4 seconds
       active = true;
       tick = 0;
-//      Serial.printf("\n----------------------------------------\n\n%s\n\n",
-//         time_string(true));
-      Serial.println("\n----------------------------------------\n");
-  } else {                   // active, one aircraft per loop() iteration
+//      Serial.println("\n----------------------------------------\n");
+      Serial.println("");
+  } else {
+      // active, report one aircraft per loop() iteration (no millis() wait)
       tick++;
       if (tick >= MAX_TRACKING_OBJECTS) {
           active = false;
           return;
       }
   }
-  const char *s = (settings->format==TXTFMT? " " : settings->format==TABFMT? "\t" : ",");
-  ufo_t *fop = &container[tick]; 
+  ufo_t *fop = &container[tick];
   if (fop->addr == 0)
       return;
-  if (timenow > fop->positiontime + 2)     // not heard from recently
+  if (timenow > fop->positiontime + 3)     // not heard from recently
       return;
+  if (timenow < fop->reporttime + 2)       // reported recently
+      return;
+  fop->reporttime = timenow;
   // construct a single line of text about each tracked aircraft
-  char *t = time_string(true);    // a bit later than actual position time
+  const char *fmt;
+  const char *t = time_string(true);      // a bit later than actual position time
+  const char *cs = ((fo.callsign[0] != '\0' || settings->format!=TXTFMT)? fo.callsign : "        ");
   if (settings->dstbrg) {
-Serial.printf("approx dst/brg: %d %d", fop->approx_dist, fop->approx_brg);
-Serial.printf("other  dst/brg: %.1f %d", fop->distance, fop->bearing);
-    snprintf(parsed, PARSE_BUF_SIZE,
-      "[%2d]%s%s%s%02d%s%06X%s%s%s%02d%s%5.1f%s%3d%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-      //idx time  rssi ID   cs  actyp  dst    brg  altitud  altdif vs  gspd trk aspd  hdg
-      tick,s, t,s, fop->rssi,s, fop->addr,s, fop->callsign,s, fop->aircraft_type,s,
-      (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),s,
-      (fop->distance==0? fop->approx_brg  : fop->bearing),s,
-      (fop->alt_type? "g" : "b"),s, fop->altitude,s,
-      fop->alt_diff,s, fop->vert_rate,s,
-      fop->groundspeed,s, fop->track,s,
-      fop->airspeed,s, fop->heading);
+    if (settings->format==TABFMT)
+      fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\t%.1f\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+    else if (settings->format==CSVFMT)
+      fmt = "[%d],%s,%d,%06X,%s,%d,%.1f,%d,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
+    else // TXTFMT
+      fmt = "[%2d] %s %02d %06X %s %02d %5.1f %3d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+           //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
+    snprintf(parsed, PARSE_BUF_SIZE, fmt,
+      tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
+      (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
+      (fop->distance==0? fop->approx_brg  : fop->bearing),
+      (fop->alt_type? "g" : ""), fop->altitude,
+      fop->alt_diff, fop->vert_rate,
+      fop->groundspeed, fop->track,
+      fop->airspeed, fop->heading);
   } else {
-    snprintf(parsed, PARSE_BUF_SIZE,
-      "[%2d]%s%s%s%02d%s%06X%s%s%s%02d%s%9.4f%s%9.4f%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-      //idx time  rssi ID   cs  actyp  lat    lon    altitud  altdif vs  gspd trk aspd  hdg
-      tick,s, t,s, fop->rssi,s, fop->addr,s, fop->callsign,s, fop->aircraft_type,s,
-      fop->latitude,s, fop->longitude,s, (fop->alt_type? "g" : "b"),s, fop->altitude,s,
-      fop->alt_diff,s, fop->vert_rate,s,
-      fop->groundspeed,s, fop->track,s,
-      fop->airspeed,s, fop->heading);
+    if (settings->format==TABFMT)
+      fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\t%.4f\t%.4f\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+    else if (settings->format==CSVFMT)
+      fmt = "[%d],%s,%d,%06X,%s,%d,%.4f,%.4f,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
+    else // TXTFMT
+      fmt = "[%2d] %s %02d %06X %s %02d %9.4f %9.4f %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+            //idx time rssi ID cs actyp lat lon altitud altdif vs gspd trk aspd hdg
+    snprintf(parsed, PARSE_BUF_SIZE, fmt,
+      tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
+      fop->latitude, fop->longitude, (fop->alt_type? "g" : ""), fop->altitude,
+      fop->alt_diff, fop->vert_rate,
+      fop->groundspeed, fop->track,
+      fop->airspeed, fop->heading);
   }
   parsedchars = strlen(parsed);
   if (Serial.availableForWrite() > parsedchars)
@@ -267,8 +287,10 @@ static bool input_complete;
 void input_loop()
 {
     int n = inputchars;
+    if (input_complete)
+        inputchars = 0;          // start a new input sentence
     input_complete = false;
-    if (n == 0) {                  // waiting for a new sentence to start
+    if (n == 0) {                // waiting for a new sentence to start
         if (Serial2.available() > (INPUT_BUF_SIZE - 256)) {
             // input buffer is getting full, drain it
             Serial2.readBytes(buf, 256);  // discard some input data
@@ -297,8 +319,10 @@ void input_loop()
 
 void parse_loop()
 {
-    if (! input_complete)
+    if (! input_complete) {
+        parsing_success = false;
         return;
+    }
 
     if (inputchars > 0 && settings->parsed != RAWFMT) {
         if (buf[0] == '*' || buf[0] == '+') {        // ADS-B data received
@@ -307,7 +331,6 @@ void parse_loop()
             Serial.write(buf, inputchars);           // copy to console
             Serial.println("");
         }
-        inputchars = 0;      // start a new input sentence
     }
 }
 

@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v02"
+#define FIRMWARE_VERSION "v03"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -90,12 +90,12 @@ extern float reflat, reflon;
 extern uint32_t timenow;
 typedef struct aclock {
     uint32_t nextsecond;   // millis() when second will be incremented
-    uint8_t second;
-    uint8_t minute;
-    uint8_t hour;
-    uint8_t day;
-    uint8_t month;
-    uint8_t year;
+    int second;
+    int minute;
+    int hour;
+    int day;
+    int month;
+    int year;
 } ourclock_t;
 extern ourclock_t ourclock;
 
@@ -104,11 +104,12 @@ typedef struct mmstruct {
     int frame;     // DF
     int type;      // TC
     int sub;       // subtype
+    char msgtype;  // I, P or V
     int fflag;     // odd/even
     uint32_t cprlat;    // 17-bit relative representation
     uint32_t cprlon;
 } mm_t;
-extern mm_t mm;
+extern mm_t mm, EmptyMsg;
 
 // variables precomputed for decoding of CPR lat/lon
 extern int NL[2];

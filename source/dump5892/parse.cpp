@@ -318,6 +318,7 @@ Serial.printf("position: non-adjacent, distance unknown\n");
         fo.altitude = decode_ac12_field();
     } else {      // GNSS alt, rare
         fo.alt_type = 1;
+        mm.msgtype = 'G';
         fo.altitude = (msg[5] << 4) | ((msg[6] >> 4) & 0x0F);   // meters!
         fo.altitude = ((fo.altitude * 3360) >> 10);
         ++msg_by_alt_cat[fo.altitude < 18000? 1 : 2];
@@ -526,6 +527,8 @@ Serial.printf("velocity: vert_rate: %d  alt_diff= %d\n", fo.vert_rate, fo.alt_di
 bool parse(char *buf, int n)
 {
     fo = EmptyFO;   // start with a clean slate of all zeros
+    mm = EmptyMsg;
+    mm.msgtype = ' ';
     bool justparse = (settings->parsed == FLDFMT);
     char s = (settings->format==TXTFMT? ' ' : settings->format==TABFMT? '\t' : ',');
     parsedchars = 0;
@@ -635,17 +638,17 @@ bool parse(char *buf, int n)
 
     if (mm.type >= 1 && mm.type <= 4) {
 
-        // Aircraft Identification and Category
+        mm.msgtype = 'I';  // Aircraft Identification and Category
         return parse_identity(justparse, s);
 
     } else if (mm.type >= 9 && mm.type <= 22 && mm.type != 19) {
 
-        // Airborne position Message
+        mm.msgtype = 'P';  // Airborne position Message
         return parse_position(justparse, s);
 
     } else if (mm.type == 19 && mm.sub >= 1 && mm.sub <= 4) {
 
-        // Airborne Velocity Message
+        mm.msgtype = 'V';  // Airborne Velocity Message
         return parse_velocity(justparse, s);
 
     }

@@ -63,9 +63,9 @@ static void show_columns()
 {
   if (settings->parsed == DECODED) {
     if (settings->dstbrg)
-      Serial.println(">time rssi DF    ID    cs  actyp  dist   brg   altitud altdif vs nsv ewv aspd  hdg");
+      Serial.println(">time rssi DF msgtyp ID  cs  actyp  dist   brg   altitud altdif vs nsv ewv aspd  hdg");
     else
-      Serial.println(">time rssi DF    ID    cs  actyp  lat    lon   altitud altdif vs nsv ewv aspd  hdg");
+      Serial.println(">time rssi DF msgtyp ID  cs  actyp  lat    lon   altitud altdif vs nsv ewv aspd  hdg");
   } else if (settings->parsed == FLDFMT) {
     Serial.println(">(rssi) DF CA ID 01..04(actype) callsign");
     Serial.println(">(rssi) DF CA ID 09..12,14..16-x alt tflag fflag cprlat cprlon");
@@ -75,6 +75,8 @@ static void show_columns()
 
 void show_settings()
 {
+    Serial.print("Date and time set to: ");
+    Serial.println(time_string(true));
     char types[64];
     char IDs[64];
     if (settings->ac_type == 0)
@@ -146,39 +148,50 @@ static void table()
   for (int i=0; i < MAX_TRACKING_OBJECTS; i++) {
      ufo_t *fop = &container[i];
      // construct a single line of text about each slot in traffic table
-     const char *cs = "        ";
-     if (fop->callsign[0] != '\0')
-     	cs = fop->callsign;
+     const char *cs = fop->callsign;
+     if (cs[0] == '\0' && settings->format == TXTFMT)
+        cs = "        ";
+     const char *fmt;
      if (fop->addr == 0) {
         // snprintf(parsed, PARSE_BUF_SIZE, "[%2d]\r\n", i);
         parsed[0] = '\0';
      } else if (timenow > fop->positiontime + 15) {
-        snprintf(parsed, PARSE_BUF_SIZE,
-             "[%2d]%s%s%s%02d%s%06X%s%s%s%02d\r\n",
-             i,s, t,s, fop->rssi,s, fop->addr,s, cs,s, fop->aircraft_type);
+       if (settings->format==TABFMT)
+         fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\r\n";
+       if (settings->format==CSVFMT)
+         fmt = "[%d],%s,%d,%06X,%s,%d\r\n";
+       else // TXTFMT
+         fmt = "[%2d] %s %02d %06X %s %02d\r\n";
+               //idx time rssi  ID cs actyp
+       snprintf(parsed, PARSE_BUF_SIZE, fmt,
+         i, t, fop->rssi, fop->addr, cs, fop->aircraft_type);
      } else  if (settings->dstbrg) {
-//Serial.printf("approx dst/brg: %d %d\n", fop->approx_dist, fop->approx_brg);
-//Serial.printf("other  dst/brg: %.1f %d\n", fop->distance, fop->bearing);
-        snprintf(parsed, PARSE_BUF_SIZE,
-             "[%2d]%s%s%s%02d%s%06X%s%s%s%02d%s%5.1f%s%3d%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-             //idx  time rssi ID   cs  actyp  lat    lon    altitud  altdif vs  gspd trk aspd  hdg
-             i,s, t,s, fop->rssi,s, fop->addr,s, cs,s, fop->aircraft_type,s,
-             (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),s,
-             (fop->distance==0? fop->approx_brg  : fop->bearing),s,
-             (fop->alt_type? "g" : "b"),s, fop->altitude,s,
-             fop->alt_diff,s, fop->vert_rate,s,
-             fop->groundspeed,s, fop->track,s,
-             fop->airspeed,s, fop->heading);
+       if (settings->format==TABFMT)
+         fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\t%.1f\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+       else if (settings->format==CSVFMT)
+         fmt = "[%d],%s,%d,%06X,%s,%d,%.1f,%d,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
+       else // TXTFMT
+         fmt = "[%2d] %s %02d %06X %s %02d %5.1f %3d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+              //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
+       snprintf(parsed, PARSE_BUF_SIZE, fmt,
+         i, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
+         (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
+         (fop->distance==0? fop->approx_brg  : fop->bearing),
+         (fop->alt_type? "g" : ""), fop->altitude, fop->alt_diff, fop->vert_rate,
+         fop->groundspeed, fop->track, fop->airspeed, fop->heading);
      } else {
-        snprintf(parsed, PARSE_BUF_SIZE,
-             "[%2d]%s%s%s%02d%s%06X%s%s%s%02d%s%9.4f%s%9.4f%s%s%s%5d%s%3d%s%4d%s%3d%s%3d%s%3d%s%3d\r\n",
-             //idx  time rssi ID   cs  actyp  lat    lon    altitud  altdif vs  gspd trk aspd  hdg
-             i,s, t,s, fop->rssi,s, fop->addr,s, cs,s, fop->aircraft_type,s,
-             fop->latitude,s, fop->longitude,s,
-             (fop->alt_type? "g" : "b"),s, fop->altitude,s,
-             fop->alt_diff,s, fop->vert_rate,s,
-             fop->groundspeed,s, fop->track,s,
-             fop->airspeed,s, fop->heading);
+       if (settings->format==TABFMT)
+         fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\t%.4f\t%.4f\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+       else if (settings->format==CSVFMT)
+         fmt = "[%d],%s,%d,%06X,%s,%d,%.4f,%.4f,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
+       else // TXTFMT
+         fmt = "[%2d] %s %02d %06X %s %02d %9.4f %9.4f %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+               //idx time rssi ID cs actyp lat lon altitud altdif vs gspd trk aspd hdg
+       snprintf(parsed, PARSE_BUF_SIZE, fmt,
+         i, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
+         fop->latitude, fop->longitude,
+         (fop->alt_type? "g" : ""), fop->altitude, fop->alt_diff, fop->vert_rate,
+         fop->groundspeed, fop->track, fop->airspeed, fop->heading);
     }
     Serial.print(parsed);
     delay(10);
@@ -268,7 +281,7 @@ static void help()
 Serial.println("\
 Commands:\n\
 RBT - reboot (restores the saved settings)\n\
-RST - reset the receiver module (and the stats)\n\
+RST - reset the receiver module\n\
 PLP (or simply hit Enter) - play/pause output\n\
 TIM,hh:mm - set current time\n\
 DAT,yy/mm/dd - set current date (optional, will appear in output)\n\
@@ -301,6 +314,7 @@ COL - show column titles for output (once, not a setting)\n");
 
 Serial.println("\
 Settings that toggle current value:\n\
+BRG - show lat/lon or distance/bearing in decoded output\n\
 RSS - include RSSI in data (switches 5892 to mode 3+)\n\
 CRC - compute and check CRC\n");
 
@@ -588,15 +602,15 @@ Serial.println("(empty command)");
       }
 
       if (strcmp("TIM",cmd)==0) {
-          sscanf(param, "%02d:%02d", &ourclock.hour, &ourclock.minute);
+          sscanf(param, "%d:%d", &ourclock.hour, &ourclock.minute);
           ourclock.second = 0;  // seconds
           Serial.printf("> Our clock set to: %02d:%02d\n", ourclock.hour, ourclock.minute);
           return;
       }
 
       if (strcmp("DAT",cmd)==0) {
-          sscanf(param, "%02d/%02d/02d", &ourclock.year, &ourclock.month, &ourclock.day);
-          Serial.printf("> Our date set to: %02d:%02d:02d\n", ourclock.year, ourclock.month, ourclock.day);
+          sscanf(param, "%d/%d/%d", &ourclock.year, &ourclock.month, &ourclock.day);
+          Serial.printf("> Our date set to: 20%02d/%02d/%02d\n", ourclock.year, ourclock.month, ourclock.day);
           return;
       }
 
@@ -627,11 +641,17 @@ Serial.println("(empty command)");
       return;
   }
 
+  if (strcmp("HLP",cmd)==0) {
+      help();
+      return;
+  }
+
   if (strcmp("SAV",cmd)==0) {
-      Serial.println("> saving settings to flash...");
+      Serial.print("> saving settings to flash...");
       delay(500);
       EEPROM_store();
       delay(1500);
+      Serial.println(" done");
       return;
   }
 

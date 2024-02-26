@@ -134,13 +134,15 @@ Serial.println("add_traffic_by_addr(): replaced empty entry in table");
 
 void update_traffic_identity()
 {
-    // do not create a new entry until position arrives
+    // do not create a new entry for an identity message, wait until position arrives
     int i = find_traffic_by_addr(fo.addr);
     if (i == 0)
         return;
     ufo_t *fop = &container[i-1];
     int aircraft_type = fo.aircraft_type;
     ++msg_by_aircraft_type[aircraft_type];
+    if (fop->aircraft_type == 0)
+        ++new_by_aircraft_type[aircraft_type];
     fop->aircraft_type = aircraft_type;
     memcpy(fop->callsign, fo.callsign, 8);
 }
