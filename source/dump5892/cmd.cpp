@@ -12,6 +12,25 @@
 
 #include "dump5892.h"
 
+static void toggle_baud_rate()
+{
+    int baudrate;
+    if (settings->baud2) {
+        settings->baud2 = 0;
+        baudrate = SERIAL_OUT_BR;
+    } else {
+        settings->baud2 = 1;
+        baudrate = HIGHER_OUT_BR;
+    }
+    Serial.printf("switching output to %d baud rate...\n", baudrate);
+    delay(1000);
+    Serial.end();
+    delay(2000);
+    Serial.setTxBufferSize(OUTPUT_BUF_SIZE);
+    Serial.begin(baudrate, SERIAL_8N1);
+    Serial.println("... hello again!");
+}
+
 static void send5892(const char *cmd)
 {
     Serial2.print(cmd);
@@ -62,10 +81,39 @@ void reset5892()
 static void show_columns()
 {
   if (settings->parsed == DECODED) {
-    if (settings->dstbrg)
-      Serial.println(">time rssi DF msgtyp ID  cs  actyp  dist   brg   altitud altdif vs nsv ewv aspd  hdg");
-    else
-      Serial.println(">time rssi DF msgtyp ID  cs  actyp  lat    lon   altitud altdif vs nsv ewv aspd  hdg");
+    if (settings->format==TABFMT) {
+      if (settings->dstbrg)
+        Serial.println(">time\trssi\tDF\tmsgtyp\tID\tcallsign\tactyp\tdist\tbrg\taltitud\taltdif\tvs\tnsv\tewv\taspd\thdg");
+      else
+        Serial.println(">time\trssi\tDF\tmsgtyp\tID\tcallsign\tactyp\tlat\tlon\taltitud\taltdif\tvs\tnsv\tewv\taspd\thdg");
+    } else if (settings->format==CSVFMT) {
+      if (settings->dstbrg)
+        Serial.println(">time,rssi,DF,msgtyp,ID,callsign,actyp,dist,brg,altitud,altdif,vs,nsv,ewv,aspd,hdg");
+      else
+        Serial.println(">time,rssi,DF,msgtyp,ID,callsign,actyp,lat,lon,altitud,altdif,vs,nsv,ewv,aspd,hdg");
+    } else {
+      if (settings->dstbrg)
+        Serial.println(">time rssi DF msgtyp ID  callsign  actyp  dist   brg   altitud altdif vs nsv ewv aspd  hdg");
+      else
+        Serial.println(">time rssi DF msgtyp ID  callsign  actyp  lat    lon   altitud altdif vs nsv ewv aspd  hdg");
+    }
+  } else if (settings->parsed == LSTFMT) {
+    if (settings->format==TABFMT) {
+      if (settings->dstbrg)
+        Serial.println(">index\ttime\trssi\tID\tcallsign\tactyp\tdst\tbrg\tg\taltitude\taltdif\tvs\tgspd\ttrk\taspd\thdg");
+      else
+        Serial.println(">index\ttime\trssi\tID\tcallsign\tactyp\tlat\tlon\tg\taltitude\taltdif\tvs\tgspd\ttrk\taspd\thdg");
+    } else if (settings->format==CSVFMT) {
+      if (settings->dstbrg)
+        Serial.println(">index,time,rssi,ID,callsign,actyp,dst,brg,g,altitude,altdif,vs,gspd,trk,aspd,hdg");
+      else
+        Serial.println(">index,time,rssi,ID,callsign,actyp,lat,lon,g,altitude,altdif,vs,gspd,trk,aspd,hdg");
+    } else {
+      if (settings->dstbrg)
+        Serial.println(">index time rssi ID callsign actyp dst brg g altitude altdif vs gspd trk aspd hdg");
+      else
+        Serial.println(">index time rssi ID callsign actyp lat lon g altitude altdif vs gspd trk aspd hdg");
+    }
   } else if (settings->parsed == FLDFMT) {
     Serial.println(">(rssi) DF CA ID 01..04(actype) callsign");
     Serial.println(">(rssi) DF CA ID 09..12,14..16-x alt tflag fflag cprlat cprlon");
@@ -130,10 +178,11 @@ settings->minrange, settings->maxrange,
  settings->alts==MEDALT?  "only show traffic between 18,000 and 50,000 feet" :
  settings->alts==HIGHALT? "only show traffic above 50,000 feet (shown as 99999)" :
  "ALL - show traffic at all altitudes"),
-(settings->dfs==ALLDFS? "show all mode-S downlink frames" :
+(settings->dfs==ALLDFS? "show all mode-S & ADS-B downlink frames" :
  settings->dfs==DF17? "show only DF17 (transponder ES) frames" :
  settings->dfs==DF18? "show only DF18 (non-transponder) frames" :
- settings->dfs==DF1718? "show DF17 and DF18 ES downlink frames" : "?"),
+ settings->dfs==DF1718? "show DF17 and DF18 ES downlink frames" :
+ settings->dfs==DF20? "show DF4 and DF20 Mode S frames" : "?"),
 types, IDs, settings->debug);
     delay(100);
     Serial.println("GNS5892 firmware version below...");
@@ -290,6 +339,7 @@ DBG,n - debug verbosity level n (0-2)\n");
 Serial.println("\
 Commands that pause the data flow:\n\
 HLP - list all commands\n\
+COD - list aircraft and message type codes\n\
 TBL - list table of aircraft recently seen\n\
 STA - show stats (# of frames received, # and % in aircraft types, etc)\n\
 SET - show current settings\n\
@@ -316,6 +366,7 @@ Serial.println("\
 Settings that toggle current value:\n\
 BRG - show lat/lon or distance/bearing in decoded output\n\
 RSS - include RSSI in data (switches 5892 to mode 3+)\n\
+BAU - output at 230,400 baud rather than 115,200\n\
 CRC - compute and check CRC\n");
 
 Serial.println("\
@@ -326,10 +377,11 @@ MAX,dd - only show traffic closer than dd nm ('MAX' for max=180)\n\
 LOW - only show traffic below 18,000 feet\n\
 MED - only show traffic between 18,000 and 50,000 feet\n\
 HIG - only show traffic above 50,000 feet (shown as 99999)\n\
-DFS - include all DF types in export (raw export format only)\n\
+DFS - include all DF types (some in raw export format only)\n\
 D17 - only show DF 17 = Extended squitter from transponders\n\
 D18 - only show DF 18 = Extended squitter from non-transponders\n\
-D78 - only DFs 17 and 18\n");
+D78 - only show DF 17 and 18\n\
+D20 - only DF 4 and 20 (Mode-S altitude)\n");
 
 Serial.println("\
 Settings with parameters:\n\
@@ -339,6 +391,38 @@ RIO,nn - GPIO pin for serial RX from radio module <<< REQUIRED\n\
 TIO,nn - GPIO pin for serial TX to radio module   <<< REQUIRED\n\
 CMP,nn - set the receiver comparator level to nn (10-200, default 100)\n\
 LOC,lat,lon - location (decimal degrees, e.g., 42.36,-97.32) <<< REQUIRED\n");
+}
+
+static void codes()
+{
+Serial.println("\
+Aircraft types:\
+   0 unknown\n\
+   1 glider\n\
+   2 LTA\n\
+   3 parachute\n\
+   4 hang glider\n\
+   5 reserved\n\
+   6 UAV\n\
+   7 spacecraft\n\
+   8 not used\n\
+   9 light\n\
+  10 medium 1\n\
+  11 medium 2\n\
+  12 high vortex\n\
+  13 heavy\n\
+  14 high perf\n\
+  15 rotorcraft\n\
+Message type codes:\n\
+   I identity (DF17-18)\n\
+   P position (DF17-18)\n\
+   G position with GNSS altitude\n\
+   V velocity (DF17-18)\n\
+   L all-call reply (DF11)\n\
+   B Comm-B altitude (DF20)\n\
+   C ACAS long (DF16)\n\
+   S ACAS short (DF 0)\n\
+   A mode S altitude (DF 4)\n");
 }
 
 static bool setvalue(const char *label, const char *cmd, uint8_t *psetting, uint8_t value, const char *msg)
@@ -408,10 +492,11 @@ Serial.println("(empty command)");
   if (setvalue("LST", cmd, &settings->parsed, LSTFMT, "list-format output of traffic table"))  return;
   if (setvalue("PAG", cmd, &settings->parsed, PAGEFMT, "page-full output (for a single aircraft)"))  return;
 
-  if (setvalue("DFS", cmd, &settings->dfs, ALLDFS, "show all mode-S downlink frames"))  return;
+  if (setvalue("DFS", cmd, &settings->dfs, ALLDFS, "show all Mode-S & ADS-B downlink frames"))  return;
   if (setvalue("D17", cmd, &settings->dfs, DF17, "show DF17 (transponder ES) frames"))  return;
   if (setvalue("D18", cmd, &settings->dfs, DF18, "show DF18 (non-transponder ES) frames"))  return;
   if (setvalue("D78", cmd, &settings->dfs, DF1718, "show DF17 and DF18 frames"))  return;
+  if (setvalue("D20", cmd, &settings->dfs, DF20, "show Mode-S DF4 and DF20 frames"))  return;
 
   if (setvalue("TXT", cmd, &settings->format, TXTFMT, "fixed column text output"))  return;
   if (setvalue("TAB", cmd, &settings->format, TABFMT, "tab-delimited output"))  return;
@@ -447,6 +532,11 @@ Serial.println("(empty command)");
     {if (setvalue("BRG", cmd, &settings->dstbrg, 0, "show lat/lon (rather than dst/brg)"))  return;}
   else
     {if (setvalue("BRG", cmd, &settings->dstbrg, 1, "show dst/brg (rather than lat/lon)"))  return;}
+
+  if (strcmp("BAU",cmd)==0) {
+    toggle_baud_rate();
+    return;
+  }
 
   // Commands that pause the data flow:
   pause5892();
@@ -525,24 +615,7 @@ Serial.println("(empty command)");
                   Serial.println("> show all aircraft types");
           } else {
               pause5892();
-              Serial.print(
-"> aircraft type must be 0..15:\
-     0 unknown\n\
-     1 glider\n\
-     2 LTA\n\
-     3 parachute\n\
-     4 hang glider\n\
-     5 reserved\n\
-     6 UAV\n\
-     7 spacecraft\n\
-     8 not used\n\
-     9 light\n\
-    10 medium 1\n\
-    11 medium 2\n\
-    12 high vortex\n\
-    13 heavy\n\
-    14 high perf\n\
-    15 rotorcraft\n");
+              Serial.println("aircraft type must be 0..15");
           }
           return;
       }
@@ -643,6 +716,11 @@ Serial.println("(empty command)");
 
   if (strcmp("HLP",cmd)==0) {
       help();
+      return;
+  }
+
+  if (strcmp("COD",cmd)==0) {
+      codes();
       return;
   }
 

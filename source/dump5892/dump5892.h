@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v03"
+#define FIRMWARE_VERSION "v04"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -26,6 +26,7 @@
 
 #define SERIAL_IN_BR      921600
 #define SERIAL_OUT_BR     115200
+#define HIGHER_OUT_BR     230400
 
 #define INPUT_BUF_SIZE      1000
 #define OUTPUT_BUF_SIZE     1000

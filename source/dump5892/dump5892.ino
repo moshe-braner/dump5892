@@ -12,10 +12,17 @@
 #include <stdlib.h>
 #include "dump5892.h"
 
+static bool has_serial2 = false;
+
 void setup()
 {
-  Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // needs to be done before begin() or it does not work
+  //Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // needs to be done before begin() or it does not work
   Serial.begin(SERIAL_OUT_BR, SERIAL_8N1);
+delay(1000);
+Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
+Serial.setTxBufferSize(2048);  // <<<
+delay(1000);
+Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
 
   Serial.println();
   Serial.print(F(FIRMWARE_IDENT));
@@ -27,6 +34,17 @@ void setup()
   EEPROM_setup();
   minrange10 = 10 * settings->minrange;
   maxrange10 = 10 * settings->maxrange;
+
+  if (settings->baud2) {
+    Serial.printf("switching output to %d baud rate\n", HIGHER_OUT_BR);
+    delay(200);
+    Serial.end();
+    delay(500);
+    Serial.setTxBufferSize(OUTPUT_BUF_SIZE);
+    Serial.begin(HIGHER_OUT_BR, SERIAL_8N1);
+delay(1000);
+Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
+  }
 
   traffic_setup();
 
@@ -41,7 +59,12 @@ void setup()
   } else {
       Serial2.setRxBufferSize(INPUT_BUF_SIZE);
       Serial2.begin(SERIAL_IN_BR, SERIAL_8N1, settings->rx_pin, settings->tx_pin);
+      has_serial2 = true;
+delay(1000);
+Serial.printf(">>>> Serial2.availableForWrite() = %d <<<<<<\n", Serial2.availableForWrite());
   }
+
+  timenow = 100;
   delay(1000);
   pause5892();
   show_settings();
@@ -116,8 +139,8 @@ subtype
 */
 void output_decoded()
 {
-    if (mm.frame != 17 && mm.frame != 18)
-        return;
+    //if (mm.frame != 17 && mm.frame != 18)
+    //    return;
     // construct a single line of text about the last arrived message
     const char *cs = ((fo.callsign[0] != '\0' || settings->format!=TXTFMT)? fo.callsign : "        ");
     const char *fmt;
@@ -137,13 +160,13 @@ void output_decoded()
         fo.altitude, fo.alt_diff, fo.vert_rate,
         fo.nsv, fo.ewv, fo.airspeed, fo.heading);
     } else {
-    if (settings->format==TABFMT)
-      fmt = "%s\t%d\t%d\t%c\t%06X\t%s\t%d\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
-    else if (settings->format==CSVFMT)
-      fmt = "%s,%d,%d,%c,%06X,%s,%d,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d\r\n";
-    else // TXTFMT
-      fmt = "%s %02d %02d %c %06X %s %02d %9.4f %9.4f %5d %5d %5d %4d %4d %3d %3d\r\n";
-           //tm rssi DF msgtyp ID cs actyp lat lon altitud altdif vs nsv ewv aspd hdg
+      if (settings->format==TABFMT)
+        fmt = "%s\t%d\t%d\t%c\t%06X\t%s\t%d\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
+      else if (settings->format==CSVFMT)
+        fmt = "%s,%d,%d,%c,%06X,%s,%d,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d\r\n";
+      else // TXTFMT
+        fmt = "%s %02d %02d %c %06X %s %02d %9.4f %9.4f %5d %5d %5d %4d %4d %3d %3d\r\n";
+             //tm rssi DF msgtyp ID cs actyp lat lon altitud altdif vs nsv ewv aspd hdg
       snprintf(parsed, PARSE_BUF_SIZE, fmt,
         time_string(true),
         fo.rssi, mm.frame, mm.msgtype, fo.addr, cs, fo.aircraft_type,
@@ -182,30 +205,29 @@ void output_page()
     Serial.println("\n----------------------------------------\n");
     // construct a page of text about the followed aircraft
     uint32_t timesince = timenow - fop->positiontime;
+    const char *cs = ((fo.callsign[0] != '\0')? fo.callsign : "        ");
     snprintf(parsed, PARSE_BUF_SIZE,
 "\
 %s      %d seconds since last position report\n\
 ICAO %06X  Callsign %s  Aircraft Type: %s  RSSI=%02d\n\
 Latitude = %9.4f   Longitude = %9.4f\n\
-     - From here:  %5.1 nm, %d bearing\n\
-Altitude = %5d (%s) (GNSS altitude rel to baro altitude: %3d)\n\
+     - From here:  %5.1f nm, %d bearing\n\
+Altitude = %5d (%s) (GNSS altitude rel to baro altitude: %5d)\n\
 Vertical speed = %5d fpm\n\
 Groundspeed = %4d knots   Track   = %3d\n\
 Airspeed    = %4d knots   Heading = %3d\n",
         time_string(true), timesince,
-        fop->addr, fop->callsign, ac_type_label[fop->aircraft_type], fop->rssi,
+        fop->addr, cs, ac_type_label[fop->aircraft_type], fop->rssi,
+        fop->latitude, fop->longitude,
         (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
         (fop->distance==0? fop->approx_brg  : fop->bearing),
-        fop->latitude, fop->longitude, fop->altitude, (fop->alt_type? "GNSS" : "barometric"),
+        fop->altitude, (fop->alt_type? "GNSS" : "barometric"),
         fop->alt_diff, fop->vert_rate,
         fop->groundspeed, fop->track,
         fop->airspeed, fop->heading);
     parsedchars = strlen(parsed);
-    if (Serial.availableForWrite() > parsedchars)
+//  if (Serial.availableForWrite() > parsedchars)
         Serial.write(parsed, parsedchars);
-    else   // discard this sentence, let slower output catch up
-        out_discard();
-    delay(50);
 }
 
 // list active entries in traffic table (those with recent position data)
@@ -244,6 +266,7 @@ void output_list()
   const char *fmt;
   const char *t = time_string(true);      // a bit later than actual position time
   const char *cs = ((fo.callsign[0] != '\0' || settings->format!=TXTFMT)? fo.callsign : "        ");
+  const char *g = (fop->alt_type? "g" : settings->format==TXTFMT? " " : "");
   if (settings->dstbrg) {
     if (settings->format==TABFMT)
       fmt = "[%d]\t%s\t%d\t%06X\t%s\t%d\t%.1f\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\r\n";
@@ -256,8 +279,7 @@ void output_list()
       tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
       (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
       (fop->distance==0? fop->approx_brg  : fop->bearing),
-      (fop->alt_type? "g" : ""), fop->altitude,
-      fop->alt_diff, fop->vert_rate,
+      g, fop->altitude, fop->alt_diff, fop->vert_rate,
       fop->groundspeed, fop->track,
       fop->airspeed, fop->heading);
   } else {
@@ -270,26 +292,33 @@ void output_list()
             //idx time rssi ID cs actyp lat lon altitud altdif vs gspd trk aspd hdg
     snprintf(parsed, PARSE_BUF_SIZE, fmt,
       tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
-      fop->latitude, fop->longitude, (fop->alt_type? "g" : ""), fop->altitude,
-      fop->alt_diff, fop->vert_rate,
+      fop->latitude, fop->longitude,
+      g, fop->altitude, fop->alt_diff, fop->vert_rate,
       fop->groundspeed, fop->track,
       fop->airspeed, fop->heading);
   }
   parsedchars = strlen(parsed);
-  if (Serial.availableForWrite() > parsedchars)
+  if (Serial.availableForWrite() > parsedchars) {
       Serial.write(parsed, parsedchars);
-  else   // discard this sentence, let slower output catch up
-      out_discard();
+  } else {
+      // discard this sentence, let slower output catch up
+      //out_discard();
+      // rather, try the same one again next time around the loop():
+      fop->reporttime -= 2;
+      --tick;
+  }
 }
 
 static bool input_complete;
 
 void input_loop()
 {
-    int n = inputchars;
     if (input_complete)
         inputchars = 0;          // start a new input sentence
     input_complete = false;
+    if (has_serial2 == false);
+        return;
+    int n = inputchars;
     if (n == 0) {                // waiting for a new sentence to start
         if (Serial2.available() > (INPUT_BUF_SIZE - 256)) {
             // input buffer is getting full, drain it
@@ -351,14 +380,16 @@ void output_loop()
     }
     if (! input_complete)
         return;
-    if (inputchars > 0 && settings->parsed == RAWFMT) {
+    if (inputchars == 0)
+        return;
+    if (settings->parsed == RAWFMT) {
         output_raw();
         return;
     }
     if (parsing_success == false)
         return;
     parsing_success = false;
-    if (inputchars > 0 && settings->parsed == RAWFILT) {   // same as RAW but filtered
+    if (settings->parsed == RAWFILT) {   // same as RAW but filtered
         int i = find_traffic_by_addr(fo.addr);
         if (i == 0)                              // not in traffic table
             return;                              // have not received a position message yet
@@ -367,6 +398,7 @@ void output_loop()
         output_raw();
         return;
     }
+    inputchars = 0;
     if (settings->parsed == FLDFMT) {
         if (Serial.availableForWrite() > parsedchars)
             Serial.write(parsed, parsedchars);

@@ -522,6 +522,57 @@ Serial.printf("velocity: vert_rate: %d  alt_diff= %d\n", fo.vert_rate, fo.alt_di
     return true;
 }
 
+// decode altitude from surveillance responses (DF 4 and 20)
+static bool parse_mode_s_altitude()
+{
+/*
+byte 0-based:  0   1   2   3
+bit, 0-based:  0   8   16  24-31
+bit, 1-based:  1   9   17  25-32
+               HH  HH  HH  HH
+                       vv
+                       17   21
+                       BBBB BBBB BBBB BBBB
+altitude bits:            ^ ^^^^ ^^^^ ^^^^
+                                  M Q
+*/
+//if (settings->debug>1)
+//Serial.printf("Mode S altitude msg: %s\n", buf);
+    int n;
+    if (msg[3]==0 && (msg[2] & 1) == 0) {  // altitude not available
+        return false;
+    } else if ((msg[3] & 0x40) != 0) {     // M bit set - metric altitude
+        // N is the 12 bit integer resulting from the removal of the M bit
+        n = ((msg[2]&0x1F)<<7) | ((msg[3]&0x80) >> 1) | (msg[3] & 0x3F);
+        // convert altitude from meters into feet            
+        n *= 3360;
+        n >>= 10;
+        // >>> this can't be right, since with 12 bits it is limited to 4095 meters
+    } else if ((msg[3] & 0x10) == 0) {     // q_bit not set - high altitude
+        return false;
+    } else {
+        // N is the 11 bit integer resulting from the removal of M & Q bits
+        n = ((msg[2]&0x1F)<<6) | ((msg[3]&0x80) >> 2) | ((msg[3]&0x20) >> 1) | (msg[3] & 0x0F);
+        // altitude in feet
+        n = n*25-1000;
+    }
+    fo.altitude = n;
+if (settings->debug>1)
+Serial.printf("Mode S altitude decoded: %d\n", n);
+    return true;
+}
+
+// decode just the ICAO ID from all-call responses (DF 11)
+static bool parse_all_call()
+{
+    fo.addr = (msg[1] << 16) | (msg[2] << 8) | msg[3];
+if (settings->debug>1)
+Serial.printf("all_call: heard from ICAO ID %X\n", fo.addr);
+    if (settings->follow != 0 && fo.addr != settings->follow)
+        return false;
+    return true;
+}
+
 // assume the n chars in buf[] include the starting '*' but not the ending ';'
 
 bool parse(char *buf, int n)
@@ -535,7 +586,7 @@ bool parse(char *buf, int n)
     int k=0;
     int i=1;
     if (buf[0] == '*') {
-        if (n != 29)
+        if (n != 29 && (settings->dfs != DF20 && settings->dfs != ALLDFS))
             return false;     // not a 112-bit ES
         if (justparse) {
             parsed[0] = buf[1];    // DF & CA
@@ -546,7 +597,7 @@ bool parse(char *buf, int n)
         fo.rssi = 0;
     } else
     if (buf[0] == '+') {
-        if (n != 31)
+        if (n != 31 && (settings->dfs != DF20 && settings->dfs != ALLDFS))
             return false;     // not a 112-bit ES
         fo.rssi = (hex2bin(buf[1]) << 4) | hex2bin(buf[2]);
         int rssi_ = fo.rssi;
@@ -575,9 +626,14 @@ bool parse(char *buf, int n)
         parsed[k++] = s;
     }
 
-    // parse just the DF for now
-    msg[0] = ((hex2bin(buf[i])) << 4) | hex2bin(buf[i+1]);
-    i += 2;      // 2 hex chars converted into one binary byte
+    // parse just the first 4 bytes for now
+//    msg[0] = ((hex2bin(buf[i])) << 4) | hex2bin(buf[i+1]);
+//    i += 2;      // 2 hex chars converted into one binary byte
+    int j=0;
+    while (j < 4) {
+        msg[j++] = (hex2bin(buf[i]) << 4) | hex2bin(buf[i+1]);
+        i += 2;
+    }
 
     mm.frame = msg[0]>>3;    // Downlink Format
     if (mm.frame > 22)
@@ -586,19 +642,28 @@ bool parse(char *buf, int n)
     ++msg_by_hour[ourclock.hour];
 
     if (mm.frame == 17) {
-        if (settings->dfs == DF18)   // only want DF18
+        if (settings->dfs == DF18 || settings->dfs == DF20)
             return false;
     } else if (mm.frame == 18) {
-        if (settings->dfs == DF17)   // only want DF17
+        if (settings->dfs == DF17 || settings->dfs == DF20)
             return false;
+    } else if (mm.frame == 4 || mm.frame == 20 || mm.frame == 0 || mm.frame == 16) {
+        if (settings->dfs == DF20 || settings->dfs == ALLDFS) {
+            mm.msgtype = (mm.frame==4? 'A' : mm.frame==20? 'B' : mm.frame==16? 'C' : 'S');
+            return parse_mode_s_altitude();
+        }
+    } else if (mm.frame == 11 && settings->dfs == ALLDFS) {
+        mm.msgtype = 'L';
+        return parse_all_call();    // all-call responses - just ID
     } else {
-        return false;               // only parse DF=17,18
+        return false;
     }
+    // at this point only DF17 and DF18 are being processed
 
     // convert the rest of the message from hex to binary
     if (! settings->chk_crc)
         n -= 6;               // skip the PI (checksum field)
-    int j=1;
+    j=4;
     while (i < n) {
         msg[j++] = (hex2bin(buf[i]) << 4) | hex2bin(buf[i+1]);
         i += 2;

@@ -37,6 +37,7 @@ static void EEPROM_defaults()
     settings->tx_pin = 255;  // 17;
     settings->comparator = 100;
     settings->debug = 0;
+    settings->baud2 = 0;
 }
 
 
@@ -73,7 +74,7 @@ void EEPROM_setup()
 
 void EEPROM_store()
 {
-  Serial.println("Writing EEPROM...");
+  //Serial.println("Writing EEPROM...");
   for (int i=0; i<sizeof(eeprom_t); i++) {
     EEPROM.write(i, eeprom_block.raw[i]);
   }
