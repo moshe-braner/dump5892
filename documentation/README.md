@@ -37,8 +37,18 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 [Compiled binaries for ESP32](https://github.com/moshe-braner/dump5892/tree/master/binaries)
 <br>
 
+## Known issues
+
+The serial input/ouput buffers are stuck at 128 bytes.  Neither SetTxBufferSize() nor build_opt.h seem able to change that.  This causes occasional dropping of output sentences.  And perhaps input ones too?
+
 
 ## Version history
+
+### revision 04
+
+Added decoding of Mode S altitude replies (DF4,20).
+Added more values in message-type field.
+UI bug fixes and improvements.
 
 ### revision 03
 
