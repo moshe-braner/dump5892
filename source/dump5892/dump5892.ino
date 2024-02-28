@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include "dump5892.h"
 
-int bytes_per_ms = (SERIAL_OUT_BR >> 13);  // output rate - allows 12 serial bits per byte
+int bytes_per_ms = (SERIAL_OUT_BR / 12000);  // output rate - allows 12 serial bits per byte
 static bool has_serial2 = false;
 
 void setup()
@@ -39,7 +39,7 @@ void setup()
     delay(500);
     Serial.setTxBufferSize(OUTPUT_BUF_SIZE);
     Serial.begin(HIGHER_OUT_BR, SERIAL_8N1);
-    bytes_per_ms = (HIGHER_OUT_BR >> 13);
+    bytes_per_ms = (HIGHER_OUT_BR / 12000);
   }
 
   traffic_setup();
@@ -129,7 +129,7 @@ void output_raw()
     buf[inputchars++] = ';';
     buf[inputchars++] = '\r';
     buf[inputchars++] = '\n';
-    output_maybe(buf, inputchars+3);
+    output_maybe(buf, inputchars);
     inputchars = 0;      // start a new input sentence
 }
 
@@ -178,8 +178,7 @@ void output_decoded()
       snprintf(parsed, PARSE_BUF_SIZE, fmt,
         time_string(true),
         fo.rssi, mm.frame, mm.msgtype, fo.addr, cs, fo.aircraft_type,
-        (fo.distance==0? 0.1*(float)fo.approx_dist : fo.distance),
-        (fo.distance==0? fo.approx_brg  : fo.bearing),
+        fo.distance, fo.bearing,
         fo.altitude, fo.alt_diff, fo.vert_rate,
         fo.nsv, fo.ewv, fo.airspeed, fo.heading);
     } else {
@@ -210,14 +209,21 @@ void output_page()
             return;
         --i;      // from base-1 to base-0 indexing
     } else {
-        for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
-           if (container[i].addr)                    // the (sole) tracked aircraft
-               break;
+        // if page format is selected and no aircraft is "followed"
+        //   then show the closest aircraft, or else any one aircraft
+        i = find_closest_traffic();
+        if (i > 0) {
+            --i;      // from base-1 to base-0 indexing
+        } else {
+            for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
+               if (container[i].addr)
+                   break;
+            }
+            if (i == MAX_TRACKING_OBJECTS)           // no tracked aircraft
+                return;
         }
-        if (i == MAX_TRACKING_OBJECTS)               // should not happen
-            return;
     }
-    traffic_update(i);
+    //traffic_update(i);
     ufo_t *fop = &container[i];
     if (fop->reporttime >= fop->positiontime)        // nothing new to report
         return;
@@ -241,8 +247,7 @@ Airspeed    = %4d knots   Heading = %3d\n",
         time_string(true), timesince, fop->rssi,
         fop->addr, cs, ac_type_label[fop->aircraft_type],
         fop->latitude, fop->longitude,
-        (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
-        (fop->distance==0? fop->approx_brg  : fop->bearing),
+        fop->distance, fop->bearing,
         fop->altitude, (fop->alt_type? "GNSS" : "barometric"),
         fop->alt_diff, fop->vert_rate,
         fop->groundspeed, fop->track,
@@ -266,7 +271,7 @@ void output_list()
       active = true;
       tick = 0;
 //      Serial.println("\n----------------------------------------\n");
-      Serial.println("");
+//      Serial.println("");
   } else {
       // active, report one aircraft per loop() iteration (no millis() wait)
       tick++;
@@ -298,8 +303,7 @@ void output_list()
            //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
     snprintf(parsed, PARSE_BUF_SIZE, fmt,
       tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
-      (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
-      (fop->distance==0? fop->approx_brg  : fop->bearing),
+      fop->distance, fop->bearing,
       g, fop->altitude, fop->alt_diff, fop->vert_rate,
       fop->groundspeed, fop->track,
       fop->airspeed, fop->heading);
@@ -390,7 +394,7 @@ void output_loop()
         return;
     }
     if (settings->parsed == PAGEFMT) {
-        if (settings->follow != 0 || num_tracked == 1)
+        if (settings->follow != 0 || num_tracked == 1 || find_closest_traffic() > 0)
             output_page();
         else
             output_list();

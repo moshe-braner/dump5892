@@ -413,6 +413,9 @@ void CPRRelative_setup()
     dLatHalf = 0.5 * dLat[0];
     // first-cut range limit (along each axis):
     maxcprdiff = (int32_t)((float)(1<<16) * (float)settings->maxrange / 180.0);
+    // a squared scaled version for slant distance
+    maxcprdiff_sq = (maxcprdiff >> 4) * (maxcprdiff >> 4);
+    
 
     // compute what does depend on reflat, reflon
     CPRRelative_precomp();

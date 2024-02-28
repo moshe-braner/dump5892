@@ -18,11 +18,11 @@ static void toggle_baud_rate()
     if (settings->outbaud) {
         settings->outbaud = 0;
         baudrate = SERIAL_OUT_BR;
-        bytes_per_ms = (SERIAL_OUT_BR >> 13);
+        bytes_per_ms = (SERIAL_OUT_BR / 12000);
     } else {
         settings->outbaud = 1;
         baudrate = HIGHER_OUT_BR;
-        bytes_per_ms = (HIGHER_OUT_BR >> 13);
+        bytes_per_ms = (HIGHER_OUT_BR / 12000);
     }
     Serial.printf("switching output to %d baud rate...\n", baudrate);
     delay(1000);
@@ -45,12 +45,17 @@ if(settings->debug)
 Serial.println("\n(un-paused)");
 else
     Serial.println("");
-    if (settings->incl_rssi) {
-        if (settings->dfs == ALLDFS) send5892("#49-82");
-        else                         send5892("#49-83");
+    int df = settings->dfs;
+    if (df == DFSALL || df == DFNOTL || df == DF20) {
+        if (settings->incl_rssi)
+            send5892("#49-82");
+        else
+            send5892("#49-02");
     } else {
-        if (settings->dfs == ALLDFS) send5892("#49-02");
-        else                         send5892("#49-03");
+        if (settings->incl_rssi)
+            send5892("#49-83");
+        else
+            send5892("#49-03");
     }
     paused = false;
 }
@@ -180,7 +185,8 @@ settings->minrange, settings->maxrange,
  settings->alts==MEDALT?  "only show traffic between 18,000 and 50,000 feet" :
  settings->alts==HIGHALT? "only show traffic above 50,000 feet (shown as 99999)" :
  "ALL - show traffic at all altitudes"),
-(settings->dfs==ALLDFS? "show all mode-S & ADS-B downlink frames" :
+(settings->dfs==DFSALL? "show all mode-S & ADS-B downlink frames" :
+ settings->dfs==DFNOTL? "show all downlink frames except all-call" :
  settings->dfs==DF17? "show only DF17 (transponder ES) frames" :
  settings->dfs==DF18? "show only DF18 (non-transponder) frames" :
  settings->dfs==DF1718? "show DF17 and DF18 ES downlink frames" :
@@ -226,8 +232,7 @@ static void table()
               //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
        snprintf(parsed, PARSE_BUF_SIZE, fmt,
          i, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
-         (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
-         (fop->distance==0? fop->approx_brg  : fop->bearing),
+         fop->distance, fop->bearing,
          (fop->alt_type? "g" : ""), fop->altitude, fop->alt_diff, fop->vert_rate,
          fop->groundspeed, fop->track, fop->airspeed, fop->heading);
      } else {
@@ -322,8 +327,6 @@ static void stats()
     Serial.printf("               not:     %6d\n", upd_by_gs_incorrect[1]);
     Serial.printf("    trk approx correct: %6d\n", upd_by_trk_incorrect[0]);
     Serial.printf("               not:     %6d\n", upd_by_trk_incorrect[1]);
-    Serial.printf("    ihypotenus correct: %6d\n", ihypot_incorrect[0]);
-    Serial.printf("               not:     %6d\n", ihypot_incorrect[1]);
 #endif
 }
 
@@ -372,23 +375,27 @@ BAU - output at 230,400 baud rather than 115,200\n\
 CRC - compute and check CRC\n");
 
 Serial.println("\
-Data filtering options:\n\
-ALL - show all ADS-B traffic (removes filters below)\n\
+Aircraft filtering options:\n\
+ALL - show all aircraft\n\
 MIN,dd - only show traffic farther than dd nm ('MIN' for no min)\n\
 MAX,dd - only show traffic closer than dd nm ('MAX' for max=180)\n\
 LOW - only show traffic below 18,000 feet\n\
 MED - only show traffic between 18,000 and 50,000 feet\n\
 HIG - only show traffic above 50,000 feet (shown as 99999)\n\
-DFS - include all DF types (some in raw export format only)\n\
-D17 - only show DF 17 = Extended squitter from transponders\n\
-D18 - only show DF 18 = Extended squitter from non-transponders\n\
-D78 - only show DF 17 and 18\n\
-D20 - only DF 4 and 20 (Mode-S altitude)\n");
+TYP,tt - only show aircraft type tt (0-15) ('TYP' alone means show all types)\n\
+TRK,xxxxxx - only show ICAO ID xxxxxx ('TRK,n by index) ('TRK' to cancel)\n");
 
 Serial.println("\
-Settings with parameters:\n\
-TYP,tt - only show aircraft type tt (0-15) ('TYP' alone means show all types)\n\
-TRK,xxxxxx - show only ICAO ID xxxxxx ('TRK,n by index) ('TRK' alone to cancel)\n\
+Data filtering options:\n\
+DFL - include all DF types (some in raw export format only)\n\
+DFA - include all DF types except all-call\n\
+D17 - only show DF 17 = Extended squitter from transponders\n\
+D18 - only show DF 18 = Extended squitter from non-transponders\n\
+D78 - only show DF 17 and 18 (ES)\n\
+D20 - only show DF 4 and 20 (Mode-S altitude)\n");
+
+Serial.println("\
+Receiver setup:\n\
 RIO,nn - GPIO pin for serial RX from radio module <<< REQUIRED\n\
 TIO,nn - GPIO pin for serial TX to radio module   <<< REQUIRED\n\
 CMP,nn - set the receiver comparator level to nn (10-200, default 100)\n\
@@ -494,7 +501,8 @@ Serial.println("(empty command)");
   if (setvalue("LST", cmd, &settings->parsed, LSTFMT, "list-format output of traffic table"))  return;
   if (setvalue("PAG", cmd, &settings->parsed, PAGEFMT, "page-full output (for a single aircraft)"))  return;
 
-  if (setvalue("DFS", cmd, &settings->dfs, ALLDFS, "show all Mode-S & ADS-B downlink frames"))  return;
+  if (setvalue("DFL", cmd, &settings->dfs, DFSALL, "show all Mode-S & ADS-B downlink frames"))  return;
+  if (setvalue("DFA", cmd, &settings->dfs, DFNOTL, "show all downlink frames except all-call"))  return;
   if (setvalue("D17", cmd, &settings->dfs, DF17, "show DF17 (transponder ES) frames"))  return;
   if (setvalue("D18", cmd, &settings->dfs, DF18, "show DF18 (non-transponder ES) frames"))  return;
   if (setvalue("D78", cmd, &settings->dfs, DF1718, "show DF17 and DF18 frames"))  return;

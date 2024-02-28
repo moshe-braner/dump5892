@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v05"
+#define FIRMWARE_VERSION "v06"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -45,9 +45,9 @@ typedef struct UFO {
     float    longitude;
     uint32_t  altitude;
     float    distance;
-    uint16_t  approx_dist;   // tenths-of-nm
+//    uint16_t  approx_dist;   // tenths-of-nm
     int16_t   bearing;
-    int16_t   approx_brg;
+//    int16_t   approx_brg;
     uint8_t   alt_type;
     uint8_t   aircraft_type;
     int16_t   ewv;
@@ -119,7 +119,7 @@ extern float dLat[2], flrlat[2], modlat[2], dLon[2], flrlon[2], modlon[2];
 extern int32_t cprMinuslat[2], cprNL0lat[2], cprNL1lat[2], cprPluslat[2];
 extern uint32_t ourcprlat[2], ourcprlon[2];
 extern float dLatHalf, dLonHalf;
-extern int32_t maxcprdiff;
+extern int32_t maxcprdiff, maxcprdiff_sq;
 extern float dLonPlus[2], flrlonPlus[2], modlonPlus[2];
 extern float dLonMinus[2], flrlonMinus[2], modlonMinus[2];
 extern uint32_t ourcprlonPlus[2], ourcprlonMinus[2];
@@ -148,7 +148,6 @@ extern int upd_by_gs_incorrect[2];
 extern int upd_by_trk_incorrect[2];
 extern int upd_by_dist_incorrect[2];
 extern int upd_by_brg_incorrect[2];
-extern int ihypot_incorrect[2];
 #endif
 
 void reset5892();
@@ -158,6 +157,7 @@ void show_settings();
 void interpret_cmd(char *sentence, int len);
 bool parse(char *buf, int n);
 int find_traffic_by_addr(uint32_t addr);
+int find_closest_traffic();
 void update_traffic_identity();
 void update_traffic_position();
 void update_traffic_velocity();

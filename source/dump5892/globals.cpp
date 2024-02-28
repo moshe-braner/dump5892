@@ -40,7 +40,7 @@ int NL[2];
 float dLat[2], flrlat[2], modlat[2], dLon[2], flrlon[2], modlon[2];
 uint32_t ourcprlat[2], ourcprlon[2];
 float dLatHalf, dLonHalf;
-int32_t maxcprdiff;
+int32_t maxcprdiff, maxcprdiff_sq;
 
 // similar values precomputed for adjacent NL zones
 int32_t cprMinuslat[2], cprNL0lat[2], cprNL1lat[2], cprPluslat[2];
@@ -91,5 +91,4 @@ int upd_by_gs_incorrect[2];
 int upd_by_trk_incorrect[2];
 int upd_by_dist_incorrect[2];
 int upd_by_brg_incorrect[2];
-int ihypot_incorrect[2];
 #endif

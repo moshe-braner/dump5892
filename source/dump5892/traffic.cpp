@@ -15,12 +15,25 @@
 // zero means not present, otherwise *base-1* index into container[].
 static uint8_t acindex[256] = {0};
 
-// Info on farthest aircraft, potentially to be replaced with closer
+// Info on farthest aircraft, potentially to be replaced with a new closer one
 static struct {
+    float dist;
     uint32_t addr;
-    uint16_t dist;
     uint8_t index1;
-} farthest = {0};
+} farthest = {0, 0, 0};
+// Info on closest aircraft
+static struct {
+    float dist;
+    uint32_t addr;
+    uint8_t index1;
+} closest = {9999.9, 0, 0};
+
+int find_closest_traffic()
+{
+    if (closest.addr)
+        return closest.index1;
+    return 0;    // not found
+}
 
 int find_traffic_by_addr(uint32_t addr)
 {
@@ -54,6 +67,11 @@ static void insert_traffic_by_index(int i, uint32_t addr)
             farthest.dist = 0;
             farthest.addr = 0;
             farthest.index1 = 0;
+        }
+        if (container[k].addr == closest.addr) {
+            closest.dist = 9999.9;
+            closest.addr = 0;
+            closest.index1 = 0;
         }
         if (num_tracked > 0)
             --num_tracked;
@@ -93,7 +111,7 @@ static void delink_traffic_by_index(int i)
 }
 
 // find existing entry or create a new one
-static int add_traffic_by_addr(uint32_t addr, uint16_t approx_dist)
+static int add_traffic_by_addr(uint32_t addr, float distance)
 {
     // find if already in container[]
     int j = find_traffic_by_addr(addr);
@@ -115,7 +133,7 @@ Serial.println("add_traffic_by_addr(): replaced empty entry in table");
 
     // else replace farthest (non-followed) object if found
     //   (avoids doing linear search)
-    if (approx_dist < farthest.dist) {
+    if (distance < farthest.dist) {
         j = farthest.index1;
         farthest.dist = 0;       // will be slowly changed in traffic_update()
         farthest.addr = 0;
@@ -150,16 +168,16 @@ void update_traffic_identity()
 void update_traffic_position()
 {
     // find in table, or try and create a new entry
-    int i = add_traffic_by_addr(fo.addr, fo.approx_dist);
+    int i = add_traffic_by_addr(fo.addr, fo.distance);
     if (i == 0)
         return;
     ufo_t *fop = &container[i-1];
-    fop->latitude = fo.latitude;
+    fop->latitude  = fo.latitude;
     fop->longitude = fo.longitude;
-    fop->alt_type = fo.alt_type;
-    fop->altitude = fo.altitude;
-    fop->approx_dist = fo.approx_dist;
-    fop->approx_brg = fo.approx_brg;
+    fop->alt_type  = fo.alt_type;
+    fop->altitude  = fo.altitude;
+    fop->distance  = fo.distance;
+    fop->bearing   = fo.bearing;
     fop->positiontime = timenow;
     if (fop->callsign[0] != 0) {        // got identity message, so have aircraft_type
         if (settings->ac_type != 0 && fop->aircraft_type != settings->ac_type)
@@ -176,12 +194,9 @@ void update_traffic_velocity()
     ufo_t *fop = &container[i-1];
     fop->ewv = fo.ewv;
     fop->nsv = fo.nsv;
-  //fop->groundspeed = fo.groundspeed;
-  //fop->track_is_valid = fo.track_is_valid;
-  //fop->track = fo.track;
-    // actually get either groundspeed+track or airspeed+heading, not both
-    // in the case of groundspeed, got it as ewv, nsv
-    // compute groundspeed in traffic_update()
+    fop->groundspeed = fo.groundspeed;
+    fop->track_is_valid = fo.track_is_valid;
+    fop->track = fo.track;
     fop->airspeed_type = fo.airspeed_type;
     fop->airspeed = fo.airspeed;
     fop->heading_is_valid = fo.heading_is_valid;
@@ -213,26 +228,26 @@ void traffic_update(int i)
         return;
 
     // keep track of which (non-followed) aircraft is farthest
-    if (fop->approx_dist > farthest.dist && fop->addr != settings->follow) {
-        farthest.dist = fop->approx_dist;
+    if (fop->distance > farthest.dist && fop->addr != settings->follow) {
+        farthest.dist = fop->distance;
         farthest.addr = fop->addr;
         farthest.index1 = i+1;
     } else if (fop->addr == farthest.addr) {
-        if (fop->approx_dist < farthest.dist)
-            farthest.dist = fop->approx_dist;   // may not really be the farthest any more
+        if (fop->distance < farthest.dist)
+            farthest.dist = fop->distance;   // may not really be the farthest any more
+    }
+    // keep track of which aircraft is closest
+    if (fop->distance > 0 && fop->distance < closest.dist) {
+        closest.dist = fop->distance;
+        closest.addr = fop->addr;
+        closest.index1 = i+1;
+    } else if (fop->addr == closest.addr) {
+        if (fop->distance > closest.dist)
+            closest.dist = fop->distance;   // may not really be the closest any more
     }
 
-    // fill in the fields that require relatively expensive "math":
-    if (fop->updatetime < fop->velocitytime) {   // may lag by up to 1 second
-        // Compute velocity and angle from the two speed components
-        fop->groundspeed = iapproxHypotenuse0(fop->nsv, fop->ewv);
-        if (fop->groundspeed > 0) {
-            fop->track = iatan2_approx(fop->nsv, fop->ewv);
-            // We don't want negative values but a 0-360 scale.
-            if (fop->track < 0)
-                fop->track += 360;
-            fop->track_is_valid = 1;
 #if defined(TESTING)
+    if (fop->updatetime < fop->velocitytime) {   // may lag by up to 1 second
         float fgroundspeed = approxHypotenuse( (float)fop->nsv, (float)fop->ewv );
         if ((float)fop->groundspeed > 1.05 * fgroundspeed)
             ++upd_by_gs_incorrect[1];
@@ -241,67 +256,40 @@ void traffic_update(int i)
         else
             ++upd_by_gs_incorrect[0];
         float ftrack = atan2_approx((float)fop->nsv, (float)fop->ewv);
+        if (ftrack < 0)
+            ftrack += 360;
         if (ftrack > 270 && fop->track < 90)
             ftrack -= 360;
         else if (ftrack < 90 && fop->track > 270)
             ftrack += 360;
-        if (fabs(ftrack - fop->track) > 3)
+        if (fop->groundspeed>0 && fabs(ftrack-fop->track) > 3)
             ++upd_by_trk_incorrect[1];
         else
             ++upd_by_trk_incorrect[0];
-#endif
-        } else if (fop->airspeed > 0) {
-            // if groundspeed is not available use airspeed
-            fop->groundspeed = fop->airspeed;
-            fop->track = fop->heading;
-            fop->track_is_valid = 1;
-        } else {
-          fop->track = 0;
-          fop->track_is_valid = 0;
-        }
     }
+#endif
 
-    // if followed, also compute distance & bearing
 #if defined(TESTING)
-    if (true) {
-#else
-    if (fop->addr == settings->follow) {
-#endif
-        if (fop->updatetime < fop->positiontime) {   // may lag by up to 1 second
-            float x, y;
-            y = (111300.0 * 0.00053996) * (fop->latitude - reflat); /* nm */
-            x = (111300.0 * 0.00053996) * (fop->longitude - reflon) * CosLat(reflat);
-            fop->distance = approxHypotenuse(x, y);
-#if defined(TESTING)
-            if (fop->distance > 1.05 * 0.1 * (float)fop->approx_dist)
-                ++upd_by_dist_incorrect[1];
-            else if (fop->distance < 0.95 * 0.1 * (float)fop->approx_dist)
-                ++upd_by_dist_incorrect[1];
-            else
-                ++upd_by_dist_incorrect[0];
-            float idist = 0.001*(float)iapproxHypotenuse1((int32_t)(1000*x), (int32_t)(1000*y));
-            if (fop->distance > 1.01 * idist)
-                ++ihypot_incorrect[1];
-            else if (fop->distance < 0.99 * idist)
-                ++ihypot_incorrect[1];
-            else
-                ++ihypot_incorrect[0];
-#endif
-            int16_t ib = (int16_t) atan2_approx(y, x);     /* degrees from ref to target */
-            if (ib < 0)
-                ib += 360;
-            fop->bearing = ib;
-#if defined(TESTING)
-//Serial.printf("traffic_update(): approx dst/brg: %d %d\n", fop->approx_dist, fop->approx_brg);
-//Serial.printf("traffic_update(): comput dst/brg: %.1f %d\n", fop->distance, fop->bearing);
-            // and/or use iatan2_approx(cprlatdiff,cprlondiff) in parse
-            if (abs(fop->bearing - fop->approx_brg) > 3)
-                ++upd_by_brg_incorrect[1];
-            else
-                ++upd_by_brg_incorrect[0];
-#endif
-        }
+    if (fop->updatetime < fop->positiontime) {   // may lag by up to 1 second
+        float x, y;
+        y = (111300.0 * 0.00053996) * (fop->latitude - reflat); /* nm */
+        x = (111300.0 * 0.00053996) * (fop->longitude - reflon) * CosLat(reflat);
+        float fdistance = approxHypotenuse(x, y);
+        if (fop->distance > 1.02 * fdistance)
+            ++upd_by_dist_incorrect[1];
+        else if (fop->distance < 0.98 * fdistance)
+            ++upd_by_dist_incorrect[1];
+        else
+            ++upd_by_dist_incorrect[0];
+        int16_t fbearing = (int16_t) atan2_approx(y, x);     /* degrees from ref to target */
+        if (fbearing < 0)
+            fbearing += 360;
+        if (abs(fop->bearing - fbearing) > 2)
+            ++upd_by_brg_incorrect[1];
+        else
+            ++upd_by_brg_incorrect[0];
     }
+#endif
 
     fop->updatetime = timenow;
 }
@@ -319,19 +307,22 @@ void traffic_setup()
     //farthest.dist = 0;
     //farthest.addr = 0;
     //farthest.index1 = 0;
+    //closest.dist = 9999.9;
+    //closest.addr = 0;
+    //closest.index1 = 0;
 }
 
 void traffic_loop()
 {
-    // update groundspeed, track (for all aircraft, one at a time) periodically
+    // update some things (for all aircraft, one at a time) periodically
     static unsigned int tick = 0;
     static uint32_t nexttime = 0;
     if (millis() < nexttime)
         return;
-    nexttime = millis() + (2000/MAX_TRACKING_OBJECTS);   // each one every 2 seconds
+    nexttime = millis() + (3000/MAX_TRACKING_OBJECTS);   // each one every 3 seconds
     tick++;
 
-    // choose which entry to update
+    // choose which entry to update this time around the loop
     // assumes MAX_TRACKING_OBJECTS is a power of 2
     int i = (tick & (MAX_TRACKING_OBJECTS-1));
     if (i >= MAX_TRACKING_OBJECTS)

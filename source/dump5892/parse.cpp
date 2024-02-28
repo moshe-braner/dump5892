@@ -157,6 +157,7 @@ Serial.println("lat wraparound up...");
     int32_t cprlatdiff = m - r;
     int32_t abslatdiff = abs(cprlatdiff);
     if (abslatdiff > maxcprdiff) {        // since even just lat diff is too far
+      if (fo.addr != settings->follow)
         return false;                     // no need to compute slant distance
     }
 
@@ -206,107 +207,14 @@ Serial.println("lon wraparound up...");
     int32_t cprlondiff = m - r;
     int32_t abslondiff = abs(cprlondiff);
     if (adjacent) {
+      if (fo.addr != settings->follow) {
         if (abslondiff > maxcprdiff)
             return false;
-    }
-
-    // use hypotenus-approximation from:
-    //   https://www.flipcode.com/archives/Fast_Approximate_Distance_Functions.shtml
-    // but modify the factors to scale from cpr units directly into tenths-of-nm.
-    // Even zone of latitude is 6 degrees = 360 nm, odd zone is 60/59 times larger.
-    // Note: cprlat is scaled as 2^17 * dLat, and dLat is about 6 degrees = 360 nm.
-    // OTOH cprlon is scaled by dLon, which varies - but in proportion to cos(lat),
-    // thus cprlon is actually scaled almost the same as cprlat (within 2%).
-    // In CPR coding a zone = 2^17.  3600/2^17 * 2^(16-10) = 1.758, so multiply the
-    // algorithm's coefficients by that, e.g., 1007 -> 1770 (for even zone).
-    // This is not exact since longitude zones are scaled slightly differently.
-    // And of course this hypotenus algorithm is not at all exact (roughly +-3%).
-    // It could be greatly improved with one "iteration", is it worth it?
-    // Probably not, unless abslondiff is adjusted for the dLon/dLat*cos(lat) ratio
-    // (which would need pre-computed ratios for the 3 zones, odd/even in each).
-    int far = 0;       // very close
-    int32_t d = 0;
-    if (adjacent) {
-
-        if ( abslatdiff < abslondiff ) {
-           m = abslatdiff;
-           r = abslondiff;
-        } else {
-           m = abslondiff;
-           r = abslatdiff;
-        }
-
-        if (mm.fflag) {
-           if ( r < ( m << 4 ))
-              d = ( r * (1800-72) ) + ( m * 788 );   // tenths-of-nm, odd
-           else
-              d = ( r * 1800 ) + ( m * 788 );
-        } else {
-           if ( r < ( m << 4 ))
-              d = ( r * (1770-71) ) + ( m * 775 );   // tenths-of-nm, even
-           else
-              d = ( r * 1770 ) + ( m * 775 );
-        }
-        d = (( d + (1<<15) ) >> 16 );
-/*
-        // original version
-        if (mm.fflag)
-           d = ( r * 1800 ) + ( m * 788 );      // tenths-of-nm, odd
-        else
-           d = ( r * 1770 ) + ( m * 775 );      // tenths-of-nm, even
-        if ( r < ( m << 4 ))
-           d -= ( r * 71 );
-        d = (( d + (1<<15) ) >> 16 );
-*/
-/*
-        // Version with "iteration" added:
-        if ( abslatdiff < abslondiff ) {
-           m = abslatdiff;
-           r = abslondiff;
-        } else {
-           m = abslondiff;
-           r = abslatdiff;
-        }
-        // First scale m & r by 1.758:
-        if (mm.fflag) {
-            m = ((1831 * m + (1<<9)) >> 10);
-            r = ((1831 * r + (1<<9)) >> 10);
-        } else {
-            m = ((1800 * m + (1<<9)) >> 10);
-            r = ((1800 * r + (1<<9)) >> 10);
-        }
-        // Then approximate the hypotenus:
-        // These coefficients need a >> 10.
-        d = ( r * 1007 ) + ( m * 441 );
-        if ( r < ( m << 4 ))
-            d -= ( r * 40 );
-        // d is now in the range 0-1800 * 2^16
-        // Do the >> 10 and also scale as >> 2:
-        d = (( d + (1<<11) ) >> 12 );
-        // Results are now in the range 0-1800 * 2^4
-        // Scale m & r by same >> 2:
-        m = (( m + (1<<1) ) >> 2 );
-        r = (( r + (1<<1) ) >> 2 );
-        // Now the "iteration":
-        d = ((d + (m*m+r*r)/d) >> 1);     // here is the (integer) division
-        // Final scaling
-        d = (( d + (1<<3) ) >> 4 );
-*/
-        fo.approx_dist = (uint16_t) d;
-        if (d > 60) {      // > 6nm
-            far = 1;
-            if (d > 300)   // > 30nm
-                far = 2;
-        }
-        ++msg_by_dst_cat[far];
-
-        // filter by distance, but always include "followed" aircraft
-        if (fo.addr != settings->follow) {
-            if (d < minrange10)
-                return false;
-            if (d > maxrange10)
-                return false;
-        }
+        // weed out remaining too-far using pre-computed squared-hypotenuse
+        // - no need to use hypotenus-approximation
+        if ((abslondiff>>4) * (abslatdiff>>4) > maxcprdiff_sq)
+            return false;
+      }
     } else {
 if (settings->debug)
 Serial.printf("position: non-adjacent, distance unknown\n");
@@ -372,17 +280,34 @@ Serial.printf("position: altitude: %d\n", fo.altitude);
         parsed[k++] = hex[(mm.cprlon & 0x0000F)];
 
     } else {
-        int decoded = decodeCPRrelative();
-        if (decoded < 0) {  // error decoding lat/lon
-            fo.approx_dist = 0;
+        if (decodeCPRrelative() < 0) {           // error decoding lat/lon
+            //fo.distance = 0;
+            //fo.bearing = 0;
             return false;
-        } else if (decoded == 2) {   // beyond adjacent NL zones
-            fo.approx_dist = 0;      // cannot compute distance here
+        }
+        uint32_t y = (uint32_t)((111300.0 * 0.53996) * (fo.latitude - reflat)); // nm * 1000
+        uint32_t x = (uint32_t)((111300.0 * 0.53996) * (fo.longitude - reflon) * CosLat(reflat));
+        fo.distance = 0.001 * (float)iapproxHypotenuse1(x, y);
+        int far = 1;
+        if (fo.distance < 6.0)
+            far = 0;
+        else if (fo.distance > 30.0)
+            far = 2;
+        ++msg_by_dst_cat[far];
+        // note that distance stats skip the too-far ones rejected earlier using maxcprdiff
+        // filter by distance, but always include "followed" aircraft
+        if (fo.addr != settings->follow) {
+            if (fo.distance < (float)settings->minrange)
+                return false;
+            if (fo.distance > (float)settings->maxrange)
+                return false;
+        }
+        if (fo.distance == 0) {
+            fo.bearing = 0;
         } else {
-            if (fo.approx_dist == 0)
-                fo.approx_brg = 0;
-            else
-                fo.approx_brg = iatan2_approx(cprlatdiff,cprlondiff);
+            fo.bearing = iatan2_approx(y,x);
+            if (fo.bearing < 0)
+                fo.bearing += 360;
         }
         update_traffic_position();
     }
@@ -444,13 +369,21 @@ static bool parse_velocity(bool justparse, char s)
       else
           fo.nsv = ns_velocity;
 
-      // Can compute velocity and angle from the two speed components
-      // - done later in traffic_update()
-      fo.track = 0;
-      fo.track_is_valid=0;
+      // Compute velocity and angle from the two speed components
+      fo.groundspeed = iapproxHypotenuse0(fo.nsv, fo.ewv);
+      if (fo.groundspeed > 0) {
+          fo.track = iatan2_approx(fo.nsv, fo.ewv);
+          // We don't want negative values but a 0-360 scale.
+          if (fo.track < 0)
+              fo.track += 360;
+          fo.track_is_valid = 1;
+      } else {
+          fo.track = 0;
+          fo.track_is_valid=0;
+      }
 
 if(settings->debug>1)
-Serial.printf("velocity: GS: %d, %d\n", fo.nsv, fo.ewv);
+Serial.printf("velocity: GS: %d, track: %d\n", fo.groundspeed, fo.track);
 
       // the following fields are absent from a groundspeed message type
       fo.heading_is_valid=0; fo.heading=0; fo.airspeed_type=0; fo.airspeed=0;
@@ -586,7 +519,7 @@ bool parse(char *buf, int n)
     int k=0;
     int i=1;
     if (buf[0] == '*') {
-        if (n != 29 && (settings->dfs != DF20 && settings->dfs != ALLDFS))
+        if (n != 29 && (settings->dfs != DFNOTL && settings->dfs != DF20 && settings->dfs != DFSALL))
             return false;     // not a 112-bit ES
         if (justparse) {
             parsed[0] = buf[1];    // DF & CA
@@ -597,7 +530,7 @@ bool parse(char *buf, int n)
         fo.rssi = 0;
     } else
     if (buf[0] == '+') {
-        if (n != 31 && (settings->dfs != DF20 && settings->dfs != ALLDFS))
+        if (n != 31 && (settings->dfs != DFNOTL && settings->dfs != DF20 && settings->dfs != DFSALL))
             return false;     // not a 112-bit ES
         fo.rssi = (hex2bin(buf[1]) << 4) | hex2bin(buf[2]);
         int rssi_ = fo.rssi;
@@ -641,21 +574,41 @@ bool parse(char *buf, int n)
     ++msg_by_DF[mm.frame];
     ++msg_by_hour[ourclock.hour];
 
+    int dfs = settings->dfs;
     if (mm.frame == 17) {
-        if (settings->dfs == DF18 || settings->dfs == DF20)
+        if (dfs == DF18 || dfs == DF20)
             return false;
     } else if (mm.frame == 18) {
-        if (settings->dfs == DF17 || settings->dfs == DF20)
+        if (dfs == DF17 || dfs == DF20)
             return false;
-    } else if (mm.frame == 4 || mm.frame == 20 || mm.frame == 0 || mm.frame == 16) {
-        if (settings->dfs == DF20 || settings->dfs == ALLDFS) {
-            mm.msgtype = (mm.frame==4? 'A' : mm.frame==20? 'B' : mm.frame==16? 'C' : 'S');
+    } else if (dfs == DF20 || dfs == DFSALL || dfs == DFNOTL) {
+        // and neither 17 nor 18
+        if (mm.frame == 11) {
+            if (dfs == DFSALL) {
+                mm.msgtype = 'L';
+                return parse_all_call();    // all-call responses - just ID
+            }
+            return false;
+        } else if (mm.frame == 4) {
+            mm.msgtype = 'A';
             return parse_mode_s_altitude();
+        } else if (mm.frame == 20) {
+            mm.msgtype = 'B';
+            return parse_mode_s_altitude();
+        } else if (mm.frame == 16) {
+            if (dfs == DFSALL || dfs == DFNOTL) {   // but not DF20
+                mm.msgtype = 'C';
+                return parse_mode_s_altitude();
+            }
+            return false;
+        } else if (mm.frame == 0) {
+            if (dfs == DFSALL || dfs == DFNOTL) {
+                mm.msgtype = 'S';
+                return parse_mode_s_altitude();
+            }
+            return false;
         }
-    } else if (mm.frame == 11 && settings->dfs == ALLDFS) {
-        mm.msgtype = 'L';
-        return parse_all_call();    // all-call responses - just ID
-    } else {
+    } else {                // dfs == D17,D18,D78
         return false;
     }
     // at this point only DF17 and DF18 are being processed

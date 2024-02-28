@@ -42,11 +42,12 @@ enum
 
 enum
 {
-    ALLDFS,
+    DFSALL,
     DF1718,
     DF17,
     DF18,
-    DF20
+    DF20,
+    DFNOTL
 };
 
 typedef struct Settings {
