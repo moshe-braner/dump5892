@@ -640,7 +640,7 @@ Serial.println("(empty command)");
       if (strcmp("CMP",cmd)==0) {
           if (param1 >= 10 && param1 <= 200) {
               settings->comparator = param1;
-              Serial2.printf("#39-00-00-%2X\r", param1);
+              Serial2.printf("#39-00-00-%02X\r", param1);
               Serial.printf("> receiver comparator level set to %d\n", param1);
           } else {
               pause5892();

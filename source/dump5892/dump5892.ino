@@ -105,10 +105,13 @@ static bool output_maybe(char *p, int n)
         sent_since = bytes_per_ms;   // don't get stuck
     else
         sent_since = (now_ms - last_output_ms) * bytes_per_ms;
-    if (output_bytes < sent_since || Serial.availableForWrite() == 128)
+    if (output_bytes < sent_since || Serial.availableForWrite() == 128) {
+        // - in ESP32 Core 2.0.3 "128" means FIFO empty (thus buffer empty too)
+        // - in later versions of ESP32 Core need to revise this
         output_bytes = 0;   // buffer flushed
-    else
+    } else {
         output_bytes -= sent_since;
+    }
     last_output_ms = now_ms;
     if (output_bytes + n > (OUTPUT_BUF_SIZE-128)) {
         // presumably not enough room in buffer
@@ -330,7 +333,7 @@ void input_loop()
     if (input_complete)
         inputchars = 0;          // start a new input sentence
     input_complete = false;
-    if (has_serial2 == false);
+    if (has_serial2 == false)
         return;
     int n = inputchars;
     if (n == 0) {                // waiting for a new sentence to start
