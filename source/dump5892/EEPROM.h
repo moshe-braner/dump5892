@@ -68,7 +68,7 @@ typedef struct Settings {
     uint8_t  tx_pin;    // GPIO pin for Serial2 output
     uint8_t  comparator;  // GNS5892 module sensitivity setting
     uint8_t  debug;     // debug verbosity level 0,1,2
-    uint8_t  baud2;     // faster output baud rate
+    uint8_t  outbaud;   // faster output baud rate
 
     uint8_t  rsvd1;
     uint8_t  rsvd2;

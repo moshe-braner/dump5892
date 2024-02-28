@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v04"
+#define FIRMWARE_VERSION "v05"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -80,6 +80,7 @@ extern bool parsing_success;
 extern bool paused;
 extern char cmdbuf[];
 extern uint8_t cmdchars;
+extern int bytes_per_ms;
 
 extern uint16_t minrange10;
 extern uint16_t maxrange10;

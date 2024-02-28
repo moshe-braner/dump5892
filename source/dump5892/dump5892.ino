@@ -12,17 +12,14 @@
 #include <stdlib.h>
 #include "dump5892.h"
 
+int bytes_per_ms = (SERIAL_OUT_BR >> 13);  // output rate - allows 12 serial bits per byte
 static bool has_serial2 = false;
 
 void setup()
 {
-  //Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // needs to be done before begin() or it does not work
+  Serial.setTxBufferSize(OUTPUT_BUF_SIZE);  // needs to be done before begin()!
   Serial.begin(SERIAL_OUT_BR, SERIAL_8N1);
-delay(1000);
-Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
-Serial.setTxBufferSize(2048);  // <<<
-delay(1000);
-Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
+  delay(50);
 
   Serial.println();
   Serial.print(F(FIRMWARE_IDENT));
@@ -35,15 +32,14 @@ Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableF
   minrange10 = 10 * settings->minrange;
   maxrange10 = 10 * settings->maxrange;
 
-  if (settings->baud2) {
+  if (settings->outbaud) {
     Serial.printf("switching output to %d baud rate\n", HIGHER_OUT_BR);
     delay(200);
     Serial.end();
     delay(500);
     Serial.setTxBufferSize(OUTPUT_BUF_SIZE);
     Serial.begin(HIGHER_OUT_BR, SERIAL_8N1);
-delay(1000);
-Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableForWrite());
+    bytes_per_ms = (HIGHER_OUT_BR >> 13);
   }
 
   traffic_setup();
@@ -60,8 +56,6 @@ Serial.printf(">>>> Serial.availableForWrite() = %d <<<<<<\n", Serial.availableF
       Serial2.setRxBufferSize(INPUT_BUF_SIZE);
       Serial2.begin(SERIAL_IN_BR, SERIAL_8N1, settings->rx_pin, settings->tx_pin);
       has_serial2 = true;
-delay(1000);
-Serial.printf(">>>> Serial2.availableForWrite() = %d <<<<<<\n", Serial2.availableForWrite());
   }
 
   timenow = 100;
@@ -85,16 +79,46 @@ char *time_string(bool withdate)
     return s;
 }
 
-void in_discard()
+static void in_discard()
 {
     Serial.println("...");
     ++in_discards;
 }
 
-void out_discard()
+// this is not actually used:
+static void out_discard()
 {
     Serial.println(".");
     ++out_discards;
+}
+
+// estimate the serial output buffer state by the number of bytes sent and when,
+//   since Serial.availableForWrite() is broken in Arduino ESP32 core v2.0.3
+//      (see https://github.com/espressif/arduino-esp32/issues/6697)
+static bool output_maybe(char *p, int n)
+{
+    static int output_bytes = 0;
+    static uint32_t last_output_ms = 0;
+    uint32_t now_ms = millis();
+    int sent_since;                  // potentially sent over the time interval
+    if (now_ms == last_output_ms)    // less than a millisec
+        sent_since = bytes_per_ms;   // don't get stuck
+    else
+        sent_since = (now_ms - last_output_ms) * bytes_per_ms;
+    if (output_bytes < sent_since || Serial.availableForWrite() == 128)
+        output_bytes = 0;   // buffer flushed
+    else
+        output_bytes -= sent_since;
+    last_output_ms = now_ms;
+    if (output_bytes + n > (OUTPUT_BUF_SIZE-128)) {
+        // presumably not enough room in buffer
+        Serial.println(".");
+        ++out_discards;
+        return false;
+    }
+    Serial.write(p, n);
+    output_bytes += n;
+    return true;
 }
 
 void output_raw()
@@ -102,11 +126,7 @@ void output_raw()
     buf[inputchars++] = ';';
     buf[inputchars++] = '\r';
     buf[inputchars++] = '\n';
-    //buf[inputchars] = '\0';
-    if (Serial.availableForWrite() > inputchars)
-        Serial.write(buf, inputchars+3);
-    else   // discard this sentence, let slower output catch up
-        out_discard();
+    output_maybe(buf, inputchars+3);
     inputchars = 0;      // start a new input sentence
 }
 
@@ -174,10 +194,7 @@ void output_decoded()
         fo.nsv, fo.ewv, fo.airspeed, fo.heading);
     }
     parsedchars = strlen(parsed);
-    if (Serial.availableForWrite() > parsedchars)
-        Serial.write(parsed, parsedchars);
-    else   // discard this sentence, let slower output catch up
-        out_discard();
+    output_maybe(parsed, parsedchars);
 }
 
 void output_page()
@@ -188,18 +205,20 @@ void output_page()
         i = find_traffic_by_addr(settings->follow);
         if (i == 0)
             return;
-        --i;
+        --i;      // from base-1 to base-0 indexing
     } else {
         for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
            if (container[i].addr)                    // the (sole) tracked aircraft
                break;
         }
-        if (i == MAX_TRACKING_OBJECTS)
+        if (i == MAX_TRACKING_OBJECTS)               // should not happen
             return;
     }
     traffic_update(i);
     ufo_t *fop = &container[i];
-    if (timenow < fop->reporttime + 3)
+    if (fop->reporttime >= fop->positiontime)        // nothing new to report
+        return;
+    if (timenow < fop->reporttime + 3)              // don't report too often
         return;
     fop->reporttime = timenow;
     Serial.println("\n----------------------------------------\n");
@@ -208,16 +227,16 @@ void output_page()
     const char *cs = ((fo.callsign[0] != '\0')? fo.callsign : "        ");
     snprintf(parsed, PARSE_BUF_SIZE,
 "\
-%s      %d seconds since last position report\n\
-ICAO %06X  Callsign %s  Aircraft Type: %s  RSSI=%02d\n\
+%s      %d seconds since last position report    RSSI=%02d\n\
+ICAO ID: %06X   Callsign: %s    Aircraft Type: %s\n\
 Latitude = %9.4f   Longitude = %9.4f\n\
-     - From here:  %5.1f nm, %d bearing\n\
-Altitude = %5d (%s) (GNSS altitude rel to baro altitude: %5d)\n\
-Vertical speed = %5d fpm\n\
+     - From here:  %5.1f nm,   %d bearing\n\
+Altitude = %5d (%s) (GNSS altitude rel to baro altitude: %d)\n\
+Vertical speed = %d fpm\n\
 Groundspeed = %4d knots   Track   = %3d\n\
 Airspeed    = %4d knots   Heading = %3d\n",
-        time_string(true), timesince,
-        fop->addr, cs, ac_type_label[fop->aircraft_type], fop->rssi,
+        time_string(true), timesince, fop->rssi,
+        fop->addr, cs, ac_type_label[fop->aircraft_type],
         fop->latitude, fop->longitude,
         (fop->distance==0? 0.1*(float)fop->approx_dist : fop->distance),
         (fop->distance==0? fop->approx_brg  : fop->bearing),
@@ -226,8 +245,7 @@ Airspeed    = %4d knots   Heading = %3d\n",
         fop->groundspeed, fop->track,
         fop->airspeed, fop->heading);
     parsedchars = strlen(parsed);
-//  if (Serial.availableForWrite() > parsedchars)
-        Serial.write(parsed, parsedchars);
+    Serial.write(parsed, parsedchars);  // may block, but this happens only every 3 seconds or so
 }
 
 // list active entries in traffic table (those with recent position data)
@@ -298,12 +316,8 @@ void output_list()
       fop->airspeed, fop->heading);
   }
   parsedchars = strlen(parsed);
-  if (Serial.availableForWrite() > parsedchars) {
-      Serial.write(parsed, parsedchars);
-  } else {
-      // discard this sentence, let slower output catch up
-      //out_discard();
-      // rather, try the same one again next time around the loop():
+  if (output_maybe(parsed, parsedchars) == false) {
+      // try the same one again next time around the loop():
       fop->reporttime -= 2;
       --tick;
   }
@@ -367,6 +381,7 @@ void output_loop()
 {
     if (settings->parsed == NOTHING)
         return;
+    // output formats based on the traffic table:
     if (settings->parsed == LSTFMT) {
         output_list();
         return;
@@ -378,6 +393,7 @@ void output_loop()
             output_list();
         return;
     }
+    // output formats based on the most recent message:
     if (! input_complete)
         return;
     if (inputchars == 0)
@@ -386,6 +402,7 @@ void output_loop()
         output_raw();
         return;
     }
+    // output formats based on the most recent parsed message:
     if (parsing_success == false)
         return;
     parsing_success = false;
@@ -400,10 +417,7 @@ void output_loop()
     }
     inputchars = 0;
     if (settings->parsed == FLDFMT) {
-        if (Serial.availableForWrite() > parsedchars)
-            Serial.write(parsed, parsedchars);
-        else   // discard this sentence, let slower output catch up
-            out_discard();
+        output_maybe(parsed, parsedchars);
         return;
     }
     output_decoded();
@@ -419,6 +433,7 @@ void cmd_loop()
             if (! complete) {
                 end_of_cmd = cmdchars;        // excludes the ';'
                 complete = true;
+                // any additional chars will be accepted but ignored
             }
         }
         if (cmdchars >= 120) {

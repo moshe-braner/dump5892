@@ -36,8 +36,8 @@ static void EEPROM_defaults()
     settings->rx_pin = 255;  // 16;
     settings->tx_pin = 255;  // 17;
     settings->comparator = 100;
+    settings->outbaud = 0;
     settings->debug = 0;
-    settings->baud2 = 0;
 }
 
 

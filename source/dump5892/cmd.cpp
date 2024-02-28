@@ -15,12 +15,14 @@
 static void toggle_baud_rate()
 {
     int baudrate;
-    if (settings->baud2) {
-        settings->baud2 = 0;
+    if (settings->outbaud) {
+        settings->outbaud = 0;
         baudrate = SERIAL_OUT_BR;
+        bytes_per_ms = (SERIAL_OUT_BR >> 13);
     } else {
-        settings->baud2 = 1;
+        settings->outbaud = 1;
         baudrate = HIGHER_OUT_BR;
+        bytes_per_ms = (HIGHER_OUT_BR >> 13);
     }
     Serial.printf("switching output to %d baud rate...\n", baudrate);
     delay(1000);
@@ -93,9 +95,9 @@ static void show_columns()
         Serial.println(">time,rssi,DF,msgtyp,ID,callsign,actyp,lat,lon,altitud,altdif,vs,nsv,ewv,aspd,hdg");
     } else {
       if (settings->dstbrg)
-        Serial.println(">time rssi DF msgtyp ID  callsign  actyp  dist   brg   altitud altdif vs nsv ewv aspd  hdg");
+        Serial.println(">time rssi DF msgtyp ID  callsign  actyp dist brg alt altdif vs nsv ewv aspd hdg");
       else
-        Serial.println(">time rssi DF msgtyp ID  callsign  actyp  lat    lon   altitud altdif vs nsv ewv aspd  hdg");
+        Serial.println(">time rssi DF msgtyp ID    callsign actyp  lat     lon   altitude altdif vs nsv ewv aspd hdg");
     }
   } else if (settings->parsed == LSTFMT) {
     if (settings->format==TABFMT) {
