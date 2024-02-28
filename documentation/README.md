@@ -40,6 +40,10 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 
 ## Version history
 
+### revision 06
+
+Cleaned up distance, bearing, speed and track calculations to use appropriate approximation for each.  Fixed minor bugs.
+
 ### revision 05
 
 Revised output flow control, to work with Arduino ESP32 Core 2.0.3 in which Serial.availableForWrite() is broken.
