@@ -37,12 +37,12 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 [Compiled binaries for ESP32](https://github.com/moshe-braner/dump5892/tree/master/binaries)
 <br>
 
-## Known issues
-
-The serial input/ouput buffers are stuck at 128 bytes.  Neither SetTxBufferSize() nor build_opt.h seem able to change that.  This causes occasional dropping of output sentences.  And perhaps input ones too?
-
 
 ## Version history
+
+### revision 05
+
+Revised output flow control, to work with Arduino ESP32 Core 2.0.3 in which Serial.availableForWrite() is broken.
 
 ### revision 04
 
