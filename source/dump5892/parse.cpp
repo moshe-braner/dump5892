@@ -386,7 +386,7 @@ if(settings->debug>1)
 Serial.printf("velocity: GS: %d, track: %d\n", fo.groundspeed, fo.track);
 
       // the following fields are absent from a groundspeed message type
-      fo.heading_is_valid=0; fo.heading=0; fo.airspeed_type=0; fo.airspeed=0;
+      //fo.heading_is_valid=0; fo.heading=0; fo.airspeed_type=0; fo.airspeed=0;
 
     } else if (mm.sub == 3 || mm.sub == 4) {   // air speed (rare)
 
@@ -419,8 +419,7 @@ if(settings->debug>1)
 Serial.printf("velocity: AS: %d  heading: %d\n", fo.airspeed, fo.heading);
 
       // the following fields are absent from an airspeed message type
-      //fo.ew_dir=0; fo.ew_velocity=0; fo.ns_dir=0; ns_velocity=0;
-      fo.ewv=0; fo.nsv=0; fo.groundspeed=0; fo.track=0; fo.track_is_valid=0;
+      //fo.ewv=0; fo.nsv=0; fo.groundspeed=0; fo.track=0; fo.track_is_valid=0;
     }
 
     fo.vert_rate_source = (msg[8]&0x10) >> 4;   // 0=GNSS, 1=baro
@@ -481,8 +480,11 @@ altitude bits:            ^ ^^^^ ^^^^ ^^^^
         n *= 3360;
         n >>= 10;
         // >>> this can't be right, since with 12 bits it is limited to 4095 meters
+        n = 88888;
+        //return false;
     } else if ((msg[3] & 0x10) == 0) {     // q_bit not set - high altitude
-        return false;
+        n = 99999;
+        //return false;
     } else {
         // N is the 11 bit integer resulting from the removal of M & Q bits
         n = ((msg[2]&0x1F)<<6) | ((msg[3]&0x80) >> 2) | ((msg[3]&0x20) >> 1) | (msg[3] & 0x0F);

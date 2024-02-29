@@ -298,7 +298,7 @@ static void stats()
     Serial.printf("    [unkn]   %6d\n", msg_by_alt_cat[0]);
     Serial.println("\nMessages by distance category:");
     Serial.printf("    [< 6 nm] %6d\n", msg_by_dst_cat[0]);
-    Serial.printf("    [3-30nm] %6d\n", msg_by_dst_cat[1]);
+    Serial.printf("    [6-30nm] %6d\n", msg_by_dst_cat[1]);
     Serial.printf("    [> 30nm] %6d\n", msg_by_dst_cat[2]);
     delay(100);
     Serial.println("\nMessages by aircraft type:");
