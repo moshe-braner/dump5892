@@ -13,11 +13,9 @@ running on a "T-Beam" board with an ESP32 processor.  The processor is already p
 
 The data processing has been wrapped in additional software that turns it into a standalone "app" that can also be used to explore the local air traffic.
 
-<br>
-
-![](https://github.com/moshe-braner/dump5892/tree/master/documentation/GNS5892_and_ESP32mini_.jpg)
-
-<br>
+<p>
+![](https://raw.githubusercontent.com/moshe-braner/dump5892/main/documentation/GNS5892_and_ESP32mini_.jpg)
+</p>
 
 ## Overview
 
