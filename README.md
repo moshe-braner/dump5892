@@ -13,6 +13,8 @@ running on a "T-Beam" board with an ESP32 processor.  The processor is already p
 
 The data processing has been wrapped in additional software that turns it into a standalone "app" that can also be used to explore the local air traffic.
 
+<p><img src="https://raw.githubusercontent.com/moshe-braner/dump5892/main/documentation/GNS5892_and_ESP32mini_.jpg" width="641" height="686"></p>
+
 ## Overview
 
 The target hardware is the GNS5892 module and a generic ESP32 board.  They should be connected with short wires, as the output baud rate of the GNS5892 is 921600 baud.  The 3.3V power output from a typical ESP32 board should be able to supply the GNS5892 the 40 mA it requires.
@@ -39,6 +41,10 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 
 
 ## Version history
+
+### revision 07
+
+Added options.  UI improvements.  Fixed minor bugs.
 
 ### revision 06
 
