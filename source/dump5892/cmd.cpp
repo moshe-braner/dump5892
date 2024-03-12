@@ -41,10 +41,6 @@ static void send5892(const char *cmd)
 
 void play5892()
 {
-if(settings->debug)
-Serial.println("\n(un-paused)");
-else
-    Serial.println("");
     int df = settings->dfs;
     if (df == DFSALL || df == DFNOTL || df == DF20) {
         if (settings->incl_rssi)
@@ -58,16 +54,20 @@ else
             send5892("#49-03");
     }
     paused = false;
+    //if(settings->debug)
+        Serial.println("\n(un-paused)");
+    //else
+    //    Serial.println("");
 }
 
 void pause5892()
 {
     send5892("#49-00");
     paused = true;
-if(settings->debug)
-Serial.println("\n(paused)");
-else
-    Serial.println("");
+    //if(settings->debug)
+        Serial.println("\n(paused)");
+    //else
+    //    Serial.println("");
 }
 
 static void play_pause()
@@ -136,6 +136,10 @@ void show_settings()
     char IDs[64];
     if (settings->ac_type == 0)
         snprintf(types,64,"Show all ('0') aircraft types");
+    else if (settings->ac_type == 254)
+        snprintf(types,64,"Show aircraft types medium-heavy");
+    else if (settings->ac_type == 255)
+        snprintf(types,64,"Show aircraft types other than medium-heavy");
     else
         snprintf(types,64,"Only show aircraft type %d", settings->ac_type);
     if (settings->follow == 0)
@@ -290,6 +294,10 @@ static void stats()
         if (msg_by_DF[i] > 0)
             Serial.printf("    [%2d] %6d\n", i, msg_by_DF[i]);
     }
+    Serial.printf("\nMessages with ADS-B altitude:     %6d\n", gray_count[0]);
+    Serial.printf(  "Messages with Gray-code altitude: %6d\n", gray_count[1]);
+    Serial.printf(  "Messages with Metric altitude:    %6d\n", gray_count[2]);
+    Serial.printf(  "Messages with invalid altitude:   %6d\n", gray_count[3]);
     delay(100);
     Serial.println("\nMessages by altitude category:");
     Serial.printf("    [<18000] %6d\n", msg_by_alt_cat[1]);
@@ -339,7 +347,8 @@ RST - reset the receiver module\n\
 PLP (or simply hit Enter) - play/pause output\n\
 TIM,hh:mm - set current time\n\
 DAT,yy/mm/dd - set current date (optional, will appear in output)\n\
-DBG,n - debug verbosity level n (0-2)\n");
+DBG,n - debug verbosity level n (0-2)\n\
+// comment to be mirrored in the output\n");
 
 Serial.println("\
 Commands that pause the data flow:\n\
@@ -382,7 +391,10 @@ MAX,dd - only show traffic closer than dd nm ('MAX' for max=180)\n\
 LOW - only show traffic below 18,000 feet\n\
 MED - only show traffic between 18,000 and 50,000 feet\n\
 HIG - only show traffic above 50,000 feet (shown as 99999)\n\
-TYP,tt - only show aircraft type tt (0-15) ('TYP' alone means show all types)\n\
+TYP,tt - only show aircraft type tt (1-15)\n\
+       - 'TYP,#' means show types medium - heavy (10-13)\n\
+       - 'TYP,~' means show types *other than* medium - heavy\n\
+       - 'TYP' alone means show all aircraft types\n\
 TRK,xxxxxx - only show ICAO ID xxxxxx ('TRK,n by index) ('TRK' to cancel)\n");
 
 Serial.println("\
@@ -458,8 +470,14 @@ Serial.println("(empty command)");
       play_pause();
       return;
   }
+
   if (len < 3) {
       help();
+      return;
+  }
+
+  if (sentence[0] == '/' && sentence[1] == '/') {
+      Serial.println(sentence);
       return;
   }
 
@@ -548,10 +566,6 @@ Serial.println("(empty command)");
     return;
   }
 
-  // Commands that pause the data flow:
-  pause5892();
-  delay(500);
-
   // Settings with parameters:
 
   if (strcmp("TYP",cmd)==0
@@ -585,9 +599,16 @@ Serial.println("(empty command)");
           } else if (strcmp("DBG",cmd)==0) {
               settings->debug = 1;
               Serial.println("> debug level 1");
+          } else if (strcmp("TIM",cmd)==0) {
+              Serial.printf("> Our clock currently: %02d:%02d\n",
+                 ourclock.hour, ourclock.minute);
+          } else if (strcmp("DAT",cmd)==0) {
+              Serial.printf("> Our date currently: 20%02d/%02d/%02d\n",
+                 ourclock.year, ourclock.month, ourclock.day);
           } else {
               pause5892();
               help();
+              Serial.println("\n(paused - hit Enter to un-pause)");
           }
           return;
       }
@@ -617,14 +638,19 @@ Serial.println("(empty command)");
       }
 
       if (strcmp("TYP",cmd)==0) {
-          if (param1 >= 0 && param1 <= 15) {
+          if (strcmp(param,"#")==0) {
+              settings->ac_type = 254;
+              Serial.println("> show aircraft types medium-heavy");
+          } else if (strcmp(param,"~")==0) {
+              settings->ac_type = 255;
+              Serial.println("> show aircraft types other than medium-heavy");
+          } else if (param1 >= 0 && param1 <= 15) {
               settings->ac_type = param1;
               if (param1)
                   Serial.printf("> show only aircraft type %d ('TYP' to cancel\n", param1);
               else
                   Serial.println("> show all aircraft types");
           } else {
-              pause5892();
               Serial.println("aircraft type must be 0..15");
           }
           return;
@@ -651,7 +677,6 @@ Serial.println("(empty command)");
               Serial2.printf("#39-00-00-%02X\r", param1);
               Serial.printf("> receiver comparator level set to %d\n", param1);
           } else {
-              pause5892();
               Serial.println("> must be between 10 & 200, default 100");
           }
           return;
@@ -693,7 +718,8 @@ Serial.println("(empty command)");
 
       if (strcmp("DAT",cmd)==0) {
           sscanf(param, "%d/%d/%d", &ourclock.year, &ourclock.month, &ourclock.day);
-          Serial.printf("> Our date set to: 20%02d/%02d/%02d\n", ourclock.year, ourclock.month, ourclock.day);
+          Serial.printf("> Our date set to: 20%02d/%02d/%02d\n",
+              ourclock.year, ourclock.month, ourclock.day);
           return;
       }
 
@@ -709,47 +735,43 @@ Serial.println("(empty command)");
               
   }  // end of settings with parameters
 
-  if (strcmp("TBL",cmd)==0) {
+  // Commands that pause the data flow:
+  pause5892();
+  delay(500);
+
+  if (strcmp("TBL",cmd)==0)
       table();
-      return;
-  }
 
-  if (strcmp("STA",cmd)==0) {
+  else if (strcmp("STA",cmd)==0)
       stats();
-      return;
-  }
 
-  if (strcmp("SET",cmd)==0) {
+  else if (strcmp("SET",cmd)==0)
       show_settings();
-      return;
-  }
 
-  if (strcmp("HLP",cmd)==0) {
+  else if (strcmp("HLP",cmd)==0)
       help();
-      return;
-  }
 
-  if (strcmp("COD",cmd)==0) {
+  else if (strcmp("COD",cmd)==0)
       codes();
-      return;
-  }
 
-  if (strcmp("SAV",cmd)==0) {
+  else if (strcmp("SAV",cmd)==0) {
       Serial.print("> saving settings to flash...");
       delay(500);
       EEPROM_store();
       delay(1500);
       Serial.println(" done");
-      return;
   }
 
-  if (strcmp("RBT",cmd)==0) {
+
+  else if (strcmp("RBT",cmd)==0) {
       Serial.println("> rebooting...");
       delay(2000);
       ESP.restart();
       // does not return
   }
 
-  Serial.println("> invalid command (type '?' for list of commands)");
-  // help();
+  else
+      Serial.println("> invalid command (type '?' for list of commands)");
+
+  Serial.println("\n(paused - hit Enter to un-pause)");
 }

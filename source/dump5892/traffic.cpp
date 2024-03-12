@@ -152,7 +152,8 @@ Serial.println("add_traffic_by_addr(): replaced empty entry in table");
 
 void update_traffic_identity()
 {
-    // do not create a new entry for an identity message, wait until position arrives
+    // do not create a new entry for an identity message,
+    //   wait until position message arrives
     int i = find_traffic_by_addr(fo.addr);
     if (i == 0)
         return;
@@ -178,10 +179,23 @@ void update_traffic_position()
     fop->altitude  = fo.altitude;
     fop->distance  = fo.distance;
     fop->bearing   = fo.bearing;
-    fop->positiontime = timenow;
-    if (fop->callsign[0] != 0) {        // got identity message, so have aircraft_type
-        if (settings->ac_type != 0 && fop->aircraft_type != settings->ac_type)
-            fop->positiontime = 0;      // signals do-not-display, filtered out
+    if (settings->ac_type != 0) {
+        // filtering by aircraft_type, wait until got identity message
+        //   - until then, fop->aircraft_type is 0
+        fop->positiontime = 0;      // signals do-not-display, filtered out
+        if (settings->ac_type == 254) {
+            // only show medium & heavy
+            if (fop->aircraft_type != 0 && (fop->aircraft_type >= 10 || fop->aircraft_type <= 13))
+                fop->positiontime = timenow;
+        } else if (settings->ac_type == 255) {
+            // exclude medium & heavy
+            if (fop->aircraft_type != 0 && (fop->aircraft_type < 10 || fop->aircraft_type > 13))
+                fop->positiontime = timenow;
+        } else if (fop->aircraft_type == settings->ac_type) {
+            fop->positiontime = timenow;
+        }
+    } else {
+        fop->positiontime = timenow;
     }
 }
 

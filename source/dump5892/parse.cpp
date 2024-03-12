@@ -40,27 +40,78 @@
 // make this inline:
 #define hex2bin(c) (((c)>='A')? (0xA+((c)-'A')) : ((c)-'0'))
 
-// Decode the 12 bit AC altitude field (in DF 17 and others). Returns the
-// altitude or 0 if it can't be decoded.
-static int decode_ac12_field() {
-    if ((msg[5] | ((msg[6]&0xF0) << 4)) == 0) {
+
+// decode Gillham ("Gray") coded altitude
+// - based on http://www.ccsinfo.com/forum/viewtopic.php?p=140960
+// - requires input bits prepared as:
+//   dab  D2 D4 A1 A2 A4 B1 B2 B4 (MSB to LSB, D1 assumed 0)
+//   c    C1 C2 C4 (MSB to LSB)
+static uint32_t GillhamDecode( uint32_t dab, uint32_t c)
+{
+    c ^= (c>>2);
+    c ^= (c>>1);
+    if (c == 0 || c == 5 || c == 6) {
+        return 0;
+    }
+    if (c == 7)
+        c = 5;
+    dab ^= (dab>>4);
+    dab ^= (dab>>2);
+    dab ^= (dab>>1);
+    if (dab & 0x01)
+        c = 6 - c;
+    return ((5*dab + c - 13) * 100);
+}
+
+// Decode the 12 bit AC altitude field (in DF 17 and others).
+// Returns the altitude, or 0 if it can't be decoded.
+static uint32_t decode_ac12_field() {
+    if (msg[5] == 0 && (msg[6]&0xF0) == 0) {
         ++msg_by_alt_cat[0];
+        ++gray_count[3];
         return 0;             // all bits 0 = altitude unknown
     }
-    if ((msg[5] & 1) == 0) {    // q_bit not set
-        ++msg_by_alt_cat[3];
-        return 99999;    // high altitude, decoding method unknown
+    uint32_t alt;
+    if ((msg[5] & 0x01) == 0) {    // q_bit not set, altitude is Gillham-coded
+/*
+        byte 0-based:  5         6
+        bit, 0-based:  40-47     48-55
+        bit, 1-based:  41        49
+                       BBBB BBBB BBBB BBBB
+        altitude bits: ^^^^ ^^^Q ^^^^            <<< mapping assumed, not in the book
+                   A    1 2  4
+                   B          1  2 4
+                   C   1 2  4        
+                   D              2 4
+*/
+        //int D = ((msg[6] & 0x40)>>5) | ((msg[6] & 0x10)>>4);
+        //int A = ((msg[5] & 0x40)>>4) | ((msg[5] & 0x10)>>3) | ((msg[5] & 0x04)>>2);
+        //int B = ((msg[5] & 0x02)<<1) | (((msg[6])>>6) & 0x02) | ((msg[6] & 0x20)>>5);
+        //int DAB = (D<<6) | (A<<3) | B;
+        uint32_t dab = ((msg[6] & 0x40) << 1) | ((msg[6] & 0x10) << 2) |
+                       ((msg[5] & 0x40)>>1) | ((msg[5] & 0x10)) | ((msg[5] & 0x04)<<1) |
+                       ((msg[5] & 0x02)<<1) | (((msg[6])>>6) & 0x02) | ((msg[6] & 0x20)>>5);
+        uint32_t c = (((msg[5])>>5) & 0x04) | ((msg[5] & 0x20)>>4) | ((msg[5] & 0x08)>>3);
+        alt = GillhamDecode(dab, c);
+        if (alt == 0) {
+            ++msg_by_alt_cat[0];
+            ++gray_count[3];
+            return 0;
+        }
+        ++gray_count[1];
+    } else {
+        ++gray_count[0];
+        // N is the 11 bit integer resulting from the removal of bit Q
+        alt = ((msg[5]>>1)<<4) | ((msg[6]&0xF0) >> 4);
+        alt = alt*25-1000;
     }
-    // N is the 11 bit integer resulting from the removal of bit Q
-    int n = ((msg[5]>>1)<<4) | ((msg[6]&0xF0) >> 4);
-    // The final altitude is due to the resulting number multiplied by 25,
-    // minus 1000.
-    n = n*25-1000;
-    if (n < 18000)
+    if (alt < 18000)
         ++msg_by_alt_cat[1];
+    else if (alt > 50000)
+        ++msg_by_alt_cat[3];
     else
         ++msg_by_alt_cat[2];
-    return n;
+    return alt;
 }
 
 static bool parse_identity(bool justparse, char s)
@@ -211,8 +262,11 @@ Serial.println("lon wraparound up...");
         if (abslondiff > maxcprdiff)
             return false;
         // weed out remaining too-far using pre-computed squared-hypotenuse
-        // - no need to use hypotenus-approximation
-        if ((abslondiff>>4) * (abslatdiff>>4) > maxcprdiff_sq)
+        // - no need to compute the un-squared distance using hypotenus-approximation
+        // - will compute more exact distance in traffic_update()
+        abslatdiff >>= 4;
+        abslondiff >>= 4;
+        if (abslatdiff*abslatdiff + abslondiff*abslondiff > maxcprdiff_sq)
             return false;
       }
     } else {
@@ -236,19 +290,24 @@ if(settings->debug>1)
 Serial.printf("position: altitude: %d\n", fo.altitude);
 
     // filter by altitude, but always include "followed" aircraft
-    if (fo.addr != settings->follow) {
-        int alts = settings->alts;
-        if (alts == LOWALT && fo.altitude > 18000) {
+    if (settings->alts != ALLALTS && fo.addr != settings->follow) {
+        if (fo.altitude == 0) {
+            // altitude not known
+            //--msg_by_dst_cat[far];    // try and undo the increment earlier
+            //--msg_by_alt_cat[0];
+            return false;
+        }
+        if (settings->alts == LOWALT && fo.altitude > 18000) {
             //--msg_by_dst_cat[far];    // try and undo the increment earlier
             //--msg_by_alt_cat[2];
             return false;
         }
-        if (alts == MEDALT && fo.altitude < 18000) {
+        if (settings->alts == MEDALT && fo.altitude < 18000) {
             //--msg_by_dst_cat[far];
             //--msg_by_alt_cat[1];
             return false;
         }
-        if (alts == HIGHALT && fo.altitude < 50000) {
+        if (settings->alts == HIGHALT && fo.altitude < 50000) {
             //--msg_by_dst_cat[far];
             //--msg_by_alt_cat[fo.altitude < 18000? 1 : 2];
             return false;
@@ -461,39 +520,66 @@ static bool parse_mode_s_altitude()
 byte 0-based:  0   1   2   3
 bit, 0-based:  0   8   16  24-31
 bit, 1-based:  1   9   17  25-32
-               HH  HH  HH  HH
-                       vv
-                       17   21
+               HH  HH  HH  HH----|
+                       v         |
+                       17   21   v
                        BBBB BBBB BBBB BBBB
 altitude bits:            ^ ^^^^ ^^^^ ^^^^
                                   M Q
+                      A     1 2  4       
+                      B            1  2 4
+                      C   1  2 4        
+                      D                2 4
 */
 //if (settings->debug>1)
 //Serial.printf("Mode S altitude msg: %s\n", buf);
-    int n;
+    uint32_t alt;
     if (msg[3]==0 && (msg[2] & 1) == 0) {  // altitude not available
-        return false;
+        alt = 0;
+        ++gray_count[3];
+        //return false;
     } else if ((msg[3] & 0x40) != 0) {     // M bit set - metric altitude
         // N is the 12 bit integer resulting from the removal of the M bit
-        n = ((msg[2]&0x1F)<<7) | ((msg[3]&0x80) >> 1) | (msg[3] & 0x3F);
+        alt = ((msg[2]&0x1F)<<7) | ((msg[3]&0x80) >> 1) | (msg[3] & 0x3F);
         // convert altitude from meters into feet            
-        n *= 3360;
-        n >>= 10;
+        alt *= 3360;
+        alt >>= 10;
         // >>> this can't be right, since with 12 bits it is limited to 4095 meters
-        n = 88888;
+        alt = 0;
+        ++gray_count[2];
         //return false;
-    } else if ((msg[3] & 0x10) == 0) {     // q_bit not set - high altitude
-        n = 99999;
-        //return false;
+    } else if ((msg[3] & 0x10) == 0) {     // q_bit not set - high altitude - Gray code
+        // http://www.ccsinfo.com/forum/viewtopic.php?p=140960
+        //int D = ((msg[3] & 0x04)>>1) | (msg[3] & 0x01);                              //  0 D2 D4 (MSB to LSB)
+        //int A = ((msg[2] & 0x08)>>1) | ((msg[2] & 0x02)>>0) | ((msg[3] & 0x80)>>7);  // A1 A2 A4 (MSB to LSB)
+        //int B = ((msg[3] & 0x20)>>3) | ((msg[3] & 0x08)>>2) | ((msg[3] & 0x02)>>1);  // B1 B2 B4 (MSB to LSB)
+        //int DAB = (D<<6) | (A<<3) | B;                                // D2 D4 A1 A2 A4 B1 B2 B4 (MSB to LSB)
+        // C1 C2 C4 (MSB to LSB):
+        int c = ((msg[2] & 0x10)>>2) | ((msg[2] & 0x04)>>1) | (msg[2] & 0x01);
+        int dab = ((msg[3] & 0x04)<<5) | ((msg[3] & 0x01)<<6) |
+                  ((msg[2] & 0x08)<<2) | ((msg[2] & 0x02)<<3) | ((msg[3] & 0x80)>>4) |
+                  ((msg[3] & 0x20)>>3) | ((msg[3] & 0x08)>>2) | ((msg[3] & 0x02)>>1);
+        alt = GillhamDecode(dab, c);
+        if (alt != 0)
+            ++gray_count[1];
+        else
+            ++gray_count[3];     // invalid - probably not a squawk code since DF=4
     } else {
+        ++gray_count[0];
         // N is the 11 bit integer resulting from the removal of M & Q bits
-        n = ((msg[2]&0x1F)<<6) | ((msg[3]&0x80) >> 2) | ((msg[3]&0x20) >> 1) | (msg[3] & 0x0F);
+        alt = ((msg[2]&0x1F)<<6) | ((msg[3]&0x80) >> 2) | ((msg[3]&0x20) >> 1) | (msg[3] & 0x0F);
         // altitude in feet
-        n = n*25-1000;
+        alt = alt*25-1000;
     }
-    fo.altitude = n;
-if (settings->debug>1)
-Serial.printf("Mode S altitude decoded: %d\n", n);
+    if (alt == 0)                // not available
+        ++msg_by_alt_cat[0];
+    else if (alt < 18000)
+        ++msg_by_alt_cat[1];
+    else if (alt > 50000)
+        ++msg_by_alt_cat[3];
+    else
+        ++msg_by_alt_cat[2];
+    fo.altitude = alt;
     return true;
 }
 
@@ -609,8 +695,10 @@ bool parse(char *buf, int n)
                 return parse_mode_s_altitude();
             }
             return false;
+        } else {                // other frames (e.g., 21)
+            return false;
         }
-    } else {                // dfs == D17,D18,D78
+    } else {                // dfs == D17,D18,D78 and frame is not 17 nor 18
         return false;
     }
     // at this point only DF17 and DF18 are being processed
