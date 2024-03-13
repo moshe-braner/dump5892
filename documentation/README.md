@@ -42,9 +42,13 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 
 ## Version history
 
+### revision 08
+
+Label ADS-R and TIS-B positions.  Label Gray-decoded altitudes.  UI improvements.
+
 ### revision 07
 
-Added options.  UI improvements.  Fixed minor bugs.
+Gillham (Gray) coded altitude decoding.  More filtering options.  UI improvements.  Fixed minor bugs.
 
 ### revision 06
 
