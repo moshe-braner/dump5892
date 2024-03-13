@@ -78,6 +78,7 @@ int msg_by_rssi[25];
 int msg_by_crc_cat[2];
 int msg_by_cpr_effort[4];
 int msg_by_DF[23];
+int msg_by_type[26];
 int gray_count[4] = {0,0,0,0};
 int msg_by_alt_cat[4];
 int msg_by_dst_cat[4];

@@ -63,7 +63,7 @@ static uint32_t GillhamDecode( uint32_t dab, uint32_t c)
     return ((5*dab + c - 13) * 100);
 }
 
-// Decode the 12 bit AC altitude field (in DF 17 and others).
+// Decode the 12 bit AC altitude field (in DF 17 and others, but not Mode S).
 // Returns the altitude, or 0 if it can't be decoded.
 static uint32_t decode_ac12_field() {
     if (msg[5] == 0 && (msg[6]&0xF0) == 0) {
@@ -99,6 +99,11 @@ static uint32_t decode_ac12_field() {
             return 0;
         }
         ++gray_count[1];
+        if (mm.msgtype == 'P')
+            mm.msgtype = 'H';
+//if(settings->debug)
+//Serial.printf("gray-coded altitude: %d (DF%d, type %d, ICAO %06X)\n", alt, mm.frame, mm.type, fo.addr);
+
     } else {
         ++gray_count[0];
         // N is the 11 bit integer resulting from the removal of bit Q
@@ -169,8 +174,8 @@ static bool parse_identity(bool justparse, char s)
     fo.callsign[7] = ais_charset[msg[10]&63];
     fo.callsign[8] = '\0';
 
-if(settings->debug>1)
-Serial.printf("identity: %06X %s\n", fo.addr, fo.callsign);
+//if(settings->debug>1)
+//Serial.printf("identity: %06X %s\n", fo.addr, fo.callsign);
 
     if (! justparse)
         update_traffic_identity();
@@ -281,13 +286,14 @@ Serial.printf("position: non-adjacent, distance unknown\n");
     } else {      // GNSS alt, rare
         fo.alt_type = 1;
         mm.msgtype = 'G';
+        ++msg_by_type[mm.msgtype-'A'];
         fo.altitude = (msg[5] << 4) | ((msg[6] >> 4) & 0x0F);   // meters!
         fo.altitude = ((fo.altitude * 3360) >> 10);
         ++msg_by_alt_cat[fo.altitude < 18000? 1 : 2];
     }
 
-if(settings->debug>1)
-Serial.printf("position: altitude: %d\n", fo.altitude);
+//if(settings->debug>1)
+//Serial.printf("position: altitude: %d\n", fo.altitude);
 
     // filter by altitude, but always include "followed" aircraft
     if (settings->alts != ALLALTS && fo.addr != settings->follow) {
@@ -441,8 +447,8 @@ static bool parse_velocity(bool justparse, char s)
           fo.track_is_valid=0;
       }
 
-if(settings->debug>1)
-Serial.printf("velocity: GS: %d, track: %d\n", fo.groundspeed, fo.track);
+//if(settings->debug>1)
+//Serial.printf("velocity: GS: %d, track: %d\n", fo.groundspeed, fo.track);
 
       // the following fields are absent from a groundspeed message type
       //fo.heading_is_valid=0; fo.heading=0; fo.airspeed_type=0; fo.airspeed=0;
@@ -474,8 +480,8 @@ Serial.printf("velocity: GS: %d, track: %d\n", fo.groundspeed, fo.track);
       if (mm.sub == 4)
          fo.airspeed <<= 2; // 4x
 
-if(settings->debug>1)
-Serial.printf("velocity: AS: %d  heading: %d\n", fo.airspeed, fo.heading);
+//if(settings->debug>1)
+//Serial.printf("velocity: AS: %d  heading: %d\n", fo.airspeed, fo.heading);
 
       // the following fields are absent from an airspeed message type
       //fo.ewv=0; fo.nsv=0; fo.groundspeed=0; fo.track=0; fo.track_is_valid=0;
@@ -491,8 +497,8 @@ Serial.printf("velocity: AS: %d  heading: %d\n", fo.airspeed, fo.heading);
     fo.alt_diff = ((raw_alt_diff & 0x7F) - 1) * 25;
     if (alt_diff_sign)  fo.alt_diff = -fo.alt_diff;  // GNSS altitude is below baro altitude
 
-if(settings->debug>1)
-Serial.printf("velocity: vert_rate: %d  alt_diff= %d\n", fo.vert_rate, fo.alt_diff);
+//if(settings->debug>1)
+//Serial.printf("velocity: vert_rate: %d  alt_diff= %d\n", fo.vert_rate, fo.alt_diff);
 
     if (justparse) {
         // vertical rate: 11 bits
@@ -674,24 +680,29 @@ bool parse(char *buf, int n)
         if (mm.frame == 11) {
             if (dfs == DFSALL) {
                 mm.msgtype = 'L';
+                ++msg_by_type[mm.msgtype-'A'];
                 return parse_all_call();    // all-call responses - just ID
             }
             return false;
         } else if (mm.frame == 4) {
             mm.msgtype = 'A';
+            ++msg_by_type[mm.msgtype-'A'];
             return parse_mode_s_altitude();
         } else if (mm.frame == 20) {
             mm.msgtype = 'B';
+            ++msg_by_type[mm.msgtype-'A'];
             return parse_mode_s_altitude();
         } else if (mm.frame == 16) {
             if (dfs == DFSALL || dfs == DFNOTL) {   // but not DF20
                 mm.msgtype = 'C';
+                ++msg_by_type[mm.msgtype-'A'];
                 return parse_mode_s_altitude();
             }
             return false;
         } else if (mm.frame == 0) {
             if (dfs == DFSALL || dfs == DFNOTL) {
                 mm.msgtype = 'S';
+                ++msg_by_type[mm.msgtype-'A'];
                 return parse_mode_s_altitude();
             }
             return false;
@@ -720,7 +731,35 @@ bool parse(char *buf, int n)
         ++msg_by_crc_cat[0];
     }
 
-    //ca = msg[0] & 7;        // Responder capabilities.
+/*
+To determine whether you receive an ADS-B message or a TIS-B message you should start
+looking at the Downlink Format (DF, first 5 bits of the message) if the DF = 17, then
+it is an ADS-B message. If the DF = 18 then you look at the control field (CF, bits 6-8).
+CF = 0 and CF = 1 are ADS-B messages. CF = 2,3 & 5 are TIS-B messages. CF = 6 are ADS-R
+messages. CF = 4 are TIS-B / ADS-R system status messages.
+https://aviation.stackexchange.com/questions/17610/what-icao-codes-are-reserved-for-tis-b-use
+*/
+
+    bool adsr = false;
+    bool tisb = false;
+    if (mm.frame == 18) {
+        switch (msg[0] & 7) {      // CF
+        case 2:
+        case 3:
+        case 5:
+            tisb = true;           // mark as TIS-B
+            break;
+        case 6:
+            adsr = true;           // mark as ADS-R
+            break;
+        case 4:
+            // status messages, discard
+            return false;
+        default:
+            // treat the same as DF17
+            break;
+        }
+    }
 
     // ICAO address
     fo.addr = (msg[1] << 16) | (msg[2] << 8) | msg[3];
@@ -730,8 +769,6 @@ bool parse(char *buf, int n)
         return false;
 
     // parsing of the 56-bit ME - just DF 17-18:
-    // DF19 is military, encrypted, show something anyway?
-    //if (mm.frame == 19) ...
 
     mm.type = msg[4] >> 3;   // Extended squitter message type.
     mm.sub = msg[4] & 7;     // Extended squitter message subtype.
@@ -747,16 +784,24 @@ bool parse(char *buf, int n)
     if (mm.type >= 1 && mm.type <= 4) {
 
         mm.msgtype = 'I';  // Aircraft Identification and Category
+        ++msg_by_type[mm.msgtype-'A'];
         return parse_identity(justparse, s);
 
     } else if (mm.type >= 9 && mm.type <= 22 && mm.type != 19) {
 
-        mm.msgtype = 'P';  // Airborne position Message
+        if (adsr)
+            mm.msgtype = 'R';
+        else if (tisb)
+            mm.msgtype = 'T';
+        else
+            mm.msgtype = 'P';  // Airborne position Message
+        ++msg_by_type[mm.msgtype-'A'];
         return parse_position(justparse, s);
 
     } else if (mm.type == 19 && mm.sub >= 1 && mm.sub <= 4) {
 
         mm.msgtype = 'V';  // Airborne Velocity Message
+        ++msg_by_type[mm.msgtype-'A'];
         return parse_velocity(justparse, s);
 
     }

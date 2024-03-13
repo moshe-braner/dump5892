@@ -130,6 +130,10 @@ static void show_columns()
 
 void show_settings()
 {
+    Serial.println();
+    Serial.print(F(FIRMWARE_IDENT));
+    Serial.print(F(" version: "));
+    Serial.println(F(FIRMWARE_VERSION));
     Serial.print("Date and time set to: ");
     Serial.println(time_string(true));
     char types[64];
@@ -232,7 +236,7 @@ static void table()
        else if (settings->format==CSVFMT)
          fmt = "[%d],%s,%d,%06X,%s,%d,%.1f,%d,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
        else // TXTFMT
-         fmt = "[%2d] %s %02d %06X %s %02d %5.1f %3d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+         fmt = "[%2d] %s %02d %06X %s %02d %5.1f %03d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
               //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
        snprintf(parsed, PARSE_BUF_SIZE, fmt,
          i, t, fop->rssi, fop->addr, cs, fop->aircraft_type,
@@ -293,6 +297,11 @@ static void stats()
     for (i=0; i<23; i++) {
         if (msg_by_DF[i] > 0)
             Serial.printf("    [%2d] %6d\n", i, msg_by_DF[i]);
+    }
+    Serial.println("\nMessages by type:");
+    for (i=0; i<26; i++) {
+        if (msg_by_type[i] > 0)
+            Serial.printf("    [%c] %6d\n", (i+'A'), msg_by_type[i]);
     }
     Serial.printf("\nMessages with ADS-B altitude:     %6d\n", gray_count[0]);
     Serial.printf(  "Messages with Gray-code altitude: %6d\n", gray_count[1]);
@@ -436,8 +445,11 @@ Aircraft types:\
   15 rotorcraft\n\
 Message type codes:\n\
    I identity (DF17-18)\n\
-   P position (DF17-18)\n\
+   P position (DF17)\n\
+   R position (DF18 ADS-R)\n\
+   T position (DF18 TIS-B)\n\
    G position with GNSS altitude\n\
+   H position - Gillham-coded alt\n\
    V velocity (DF17-18)\n\
    L all-call reply (DF11)\n\
    B Comm-B altitude (DF20)\n\

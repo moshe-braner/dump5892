@@ -173,8 +173,8 @@ void output_decoded()
       else if (settings->format==CSVFMT)
         fmt = "%s,%02d,%02d,%c,%06X,%s,%d,%.1f,%d,%d,%d,%d,%d,%d,%d,%d\r\n";
       else // TXTFMT
-        fmt = "%s %02d %02d %c %06X %s %02d %5.1f %3d %5d %5d %5d %4d %4d %3d %3d\r\n";
-            //tm rssi DF msgtyp ID cs actyp dst  brg altitud altdif vs nsv ewv aspd hdg
+        fmt = "%s %02d %02d %c %06X %s %02d %5.1f %03d %5d %5d %5d %4d %4d %3d %3d\r\n";
+            //tm rssi DF msgtyp ID cs actyp dst brg altitud altdif vs nsv ewv aspd hdg
       snprintf(parsed, PARSE_BUF_SIZE, fmt,
         time_string(true),
         fo.rssi, mm.frame, mm.msgtype, fo.addr, cs, fo.aircraft_type,
@@ -299,7 +299,7 @@ void output_list()
     else if (settings->format==CSVFMT)
       fmt = "[%d],%s,%d,%06X,%s,%d,%.1f,%d,%s,%d,%d,%d,%d,%d,%d,%d\r\n";
     else // TXTFMT
-      fmt = "[%2d] %s %02d %06X %s %02d %5.1f %3d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
+      fmt = "[%2d] %s %02d %06X %s %02d %5.1f %03d %s %5d %5d %5d %3d %3d %3d %3d\r\n";
            //idx time rssi ID cs actyp dst brg altitude altdif vs gspd trk aspd hdg
     snprintf(parsed, PARSE_BUF_SIZE, fmt,
       tick, t, fop->rssi, fop->addr, cs, fop->aircraft_type,

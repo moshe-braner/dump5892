@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v07"
+#define FIRMWARE_VERSION "v08"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -135,6 +135,7 @@ extern int msg_by_rssi[25];
 extern int msg_by_crc_cat[2];
 extern int msg_by_cpr_effort[4];
 extern int msg_by_DF[23];
+extern int msg_by_type[26];
 extern int gray_count[4];
 extern int msg_by_alt_cat[4];
 extern int msg_by_dst_cat[4];
