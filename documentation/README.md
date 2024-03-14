@@ -42,6 +42,10 @@ Open [discussion forum](https://gitter.im/SoftRF-open/community).
 
 ## Version history
 
+### revision 09
+
+Corrected CRC check.  Use it to extract ICAO ID from DF4 Mode-S altitude messages.
+
 ### revision 08
 
 Label ADS-R and TIS-B positions.  Label Gray-decoded altitudes.  UI improvements.
