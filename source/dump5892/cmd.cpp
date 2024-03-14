@@ -78,11 +78,15 @@ static void play_pause()
 
 void reset5892()
 {
-    pause5892();
+    //pause5892();
     Serial.println("> resetting GNS5892...");
-    delay(500);
+    //delay(300);
     send5892("#FF");
-    delay(1000);
+    delay(2000);
+    play5892();
+    delay(300);
+    if (settings->comparator != 100)
+        Serial2.printf("#39-00-00-%02X\r", (uint32_t) settings->comparator);
 }
 
 static void show_columns()
@@ -265,19 +269,20 @@ static void table()
 
 static void stats()
 {
-    Serial.println("\nSTATISTICS (since last reboot):\n");
+    Serial.println("\nSTATISTICS (since last reboot):\n\n");
     Serial.printf("Input  discards (overflow): %6d\n", in_discards);
     Serial.printf("Output discards (overflow): %6d\n", out_discards);
     int i;
     if (settings->incl_rssi) {
-        Serial.println("Messages by RSSI:");
+        Serial.println("\nMessages by RSSI:");
         for (i=0; i<25; i++)
             if (msg_by_rssi[i] > 0)
                 Serial.printf("    [%2d] %6d\n", i+22, msg_by_rssi[i]);
     }
     delay(100);
     if (settings->chk_crc) {
-        Serial.printf("Messages with CRC error: %d\n", msg_by_crc_cat[1]);
+        Serial.printf("\nMessages with CRC error: %d\n", msg_by_crc_cat[1]);
+        Serial.printf("Messages with CRC OK: %d\n", msg_by_crc_cat[0]);
     }
     Serial.println("\nMessages by hour:");
     for (i=0; i<24; i++) {

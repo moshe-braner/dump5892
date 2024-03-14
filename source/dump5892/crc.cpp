@@ -47,11 +47,24 @@ static uint32_t mode_s_checksum_table[] = {
   0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000
 };
 
-static uint32_t mode_s_checksum() {
-  int bits = 112;
+static uint32_t mode_s_checksum( int n ) {
+
+  int bits = n * 8;
+
+  if (bits != 56 && bits != 112) {
+if(settings->debug>1)
+Serial.printf("mode_s_checksum(): %d bits?\n", bits);
+      return 0xFFFFFF;   // not 0
+  }
+
   uint32_t crc = 0;
-  //int offset = (bits == 112) ? 0 : (112-56);
+  int offset = ((bits == 112) ? 0 : (112-56));
   int j;
+
+  // same result with or without processing the parity bits
+  // due to the last 24 entries in the table being all zeros
+  // - might as well skip them then, save CPU time
+  bits -= 24;
 
   int byte = 0;
   int bitmask = (1 << 7);
@@ -63,26 +76,28 @@ static uint32_t mode_s_checksum() {
 
     // If bit is set, xor with corresponding table entry.
     if (msg[byte] & bitmask)
-      crc ^= mode_s_checksum_table[j /*+offset*/];
+      crc ^= mode_s_checksum_table[j+offset];
 
     j++;
     if ((j & 0x7) == 0) {
       byte++;
       bitmask = (1 << 7);
     } else {
-      bitmask >> 1;
+      bitmask >>= 1;
     }
   }
 
   return crc; // 24 bit checksum.
 }
 
-bool check_crc()
+uint32_t check_crc( int n )
 {
   // CRC is always the last three bytes.
-  uint32_t crc = ((uint32_t)msg[(112/8)-3] << 16) |
-                  ((uint32_t)msg[(112/8)-2] << 8) |
-                  (uint32_t)msg[(112/8)-1];
-  uint32_t crc2 = mode_s_checksum();
-  return (crc == crc2);
+  uint32_t crc = (((uint32_t)msg[n-3]) << 16) |
+                  (((uint32_t)msg[n-2]) << 8) |
+                  (uint32_t)msg[n-1];
+  uint32_t crc2 = mode_s_checksum(n);
+if(settings->debug>1 && crc != crc2)
+Serial.printf("checkcrc(): %06X -> %06X (XORed: %06X)\n", crc, crc2, crc^crc2);
+  return (crc ^ crc2);
 }

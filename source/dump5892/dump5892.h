@@ -17,7 +17,7 @@
 
 #include "EEPROM.h"
 
-#define FIRMWARE_VERSION "v08"
+#define FIRMWARE_VERSION "v09"
 #define FIRMWARE_IDENT   "dump5892"
 
 #define TESTING
@@ -163,13 +163,14 @@ int find_closest_traffic();
 void update_traffic_identity();
 void update_traffic_position();
 void update_traffic_velocity();
+void update_mode_s_traffic();
 void traffic_update(int i);
 void traffic_setup();
 void traffic_loop();
 int decodeCPRrelative();
 void CPRRelative_precomp();
 void CPRRelative_setup();
-bool check_crc();
+uint32_t check_crc( int n );
 void EEPROM_setup();
 void EEPROM_store();
 char *time_string(bool withdate);

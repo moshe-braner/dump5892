@@ -267,8 +267,8 @@ Serial.println("lon wraparound up...");
         if (abslondiff > maxcprdiff)
             return false;
         // weed out remaining too-far using pre-computed squared-hypotenuse
-        // - no need to compute the un-squared distance using hypotenus-approximation
-        // - will compute more exact distance in traffic_update()
+        // - no need to compute the un-squared distance at this point
+        // - will compute more exact distance later using hypotenus-approximation
         abslatdiff >>= 4;
         abslondiff >>= 4;
         if (abslatdiff*abslatdiff + abslondiff*abslondiff > maxcprdiff_sq)
@@ -577,15 +577,25 @@ altitude bits:            ^ ^^^^ ^^^^ ^^^^
         // altitude in feet
         alt = alt*25-1000;
     }
-    if (alt == 0)                // not available
+    if (alt == 0) {              // not available
         ++msg_by_alt_cat[0];
-    else if (alt < 18000)
+        return false;
+    }
+    if (alt < 18000)
         ++msg_by_alt_cat[1];
     else if (alt > 50000)
         ++msg_by_alt_cat[3];
     else
         ++msg_by_alt_cat[2];
+    if (settings->alts == LOWALT && alt > 18000)
+        return false;
+    if (settings->alts == MEDALT && alt < 18000)
+        return false;
+    if (settings->alts == HIGHALT && alt < 50000)
+        return false;
     fo.altitude = alt;
+    if (fo.addr != 0)            // ICAO ID available from DF4
+        update_mode_s_traffic();
     return true;
 }
 
@@ -687,6 +697,12 @@ bool parse(char *buf, int n)
         } else if (mm.frame == 4) {
             mm.msgtype = 'A';
             ++msg_by_type[mm.msgtype-'A'];
+            j=4;
+            while (i < n) {
+                msg[j++] = (hex2bin(buf[i]) << 4) | hex2bin(buf[i+1]);
+                i += 2;
+            }
+            fo.addr = check_crc( j );      // assume checksum OK, extract overlayed IACO ID
             return parse_mode_s_altitude();
         } else if (mm.frame == 20) {
             mm.msgtype = 'B';
@@ -712,6 +728,7 @@ bool parse(char *buf, int n)
     } else {                // dfs == D17,D18,D78 and frame is not 17 nor 18
         return false;
     }
+
     // at this point only DF17 and DF18 are being processed
 
     // convert the rest of the message from hex to binary
@@ -723,8 +740,9 @@ bool parse(char *buf, int n)
         i += 2;
     }
 
+    // check CRC if desired - but only for DF=17,18
     if (settings->chk_crc) {
-        if (check_crc() == false) {
+        if (check_crc( j ) != 0) {
             ++msg_by_crc_cat[1];
             return false;
         }

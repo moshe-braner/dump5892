@@ -116,8 +116,8 @@ static int add_traffic_by_addr(uint32_t addr, float distance)
     // find if already in container[]
     int j = find_traffic_by_addr(addr);
     if (j != 0) {
-if(settings->debug>1)
-Serial.println("add_traffic_by_addr(): already in table");
+//if(settings->debug>1)
+//Serial.println("add_traffic_by_addr(): already in table");
         return j;
     }
 
@@ -173,6 +173,10 @@ void update_traffic_position()
     if (i == 0)
         return;
     ufo_t *fop = &container[i-1];
+    if (fop->latitude == 0 && fop->altitude != 0) {
+if(settings->debug>1)
+Serial.printf("ADS-B overwriting Mode S altitude for ID %06X\n", fo.addr);
+    }
     fop->latitude  = fo.latitude;
     fop->longitude = fo.longitude;
     fop->alt_type  = fo.alt_type;
@@ -218,6 +222,25 @@ void update_traffic_velocity()
     fop->vert_rate = fo.vert_rate;
     fop->alt_diff = fo.alt_diff;
     fop->velocitytime = timenow;
+}
+
+// DF4 Mode S altitude replies - only altitude & ICAO ID
+void update_mode_s_traffic()
+{
+    // find in table, or try and create a new entry
+    int i = add_traffic_by_addr(fo.addr, fo.distance);
+    if (i == 0)
+        return;
+    ufo_t *fop = &container[i-1];
+    if (fop->latitude == 0) {       // do not overwrite fuller data if available from ADS-B
+        //if (fop->altitude == 0) {
+        if (fop->altitude != fo.altitude) {
+if(settings->debug>1)
+Serial.printf("Mode S altitude %d for ID %06X\n", fo.altitude, fo.addr);
+        }
+        fop->altitude = fo.altitude;
+        fop->positiontime = timenow;
+    }
 }
 
 void traffic_update(int i)
