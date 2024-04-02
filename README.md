@@ -1,4 +1,4 @@
-# DUMP5892 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [![Join the chat at https://gitter.im/SoftRF-open/community](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/SoftRF-open/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+# DUMP5892 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 Software for DIY 1090ES ADS-B receiver based on the GNS 5892 module
 
@@ -30,7 +30,7 @@ The source code is set up to compile for ESP32 under the Arduino IDE.
 
 ## Links
 
-Open [discussion forum](https://gitter.im/SoftRF-open/community).
+Open [discussion forum](https://groups.google.com/g/softrf_community).
 <br>
 
 [Source code](https://github.com/moshe-braner/dump5892/tree/master/source/dump5892)
